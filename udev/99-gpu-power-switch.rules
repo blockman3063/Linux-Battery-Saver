@@ -1,7 +1,11 @@
 # gpu-power-switch — toggle NVIDIA dGPU + system power profile on AC change
-# Triggered on any power_supply whose `online` attribute flips.
+# We match `online` explicitly (not `*`) so the rule only fires when the
+# attribute actually becomes 0 or 1, not on every power_supply uevent
+# (e.g. status changes, capacity updates, etc.). This keeps journalctl
+# quiet between real AC transitions.
 #
 # NOTE: udev RUN executes synchronously and inherits a minimal environment.
 # Do not rely on PATH; the script uses absolute paths and command -v lookups.
 
-SUBSYSTEM=="power_supply", ATTR{online}=="*", RUN+="/usr/lib/gpu-power-switch/gpu-power-switch.sh"
+SUBSYSTEM=="power_supply", ATTR{online}=="0", RUN+="/usr/lib/gpu-power-switch/gpu-power-switch.sh"
+SUBSYSTEM=="power_supply", ATTR{online}=="1", RUN+="/usr/lib/gpu-power-switch/gpu-power-switch.sh"

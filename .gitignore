@@ -12,3 +12,6 @@ __pycache__/
 
 # Local install overrides
 .env
+
+# Personal backups (kept locally, not in the public repo)
+old-config/

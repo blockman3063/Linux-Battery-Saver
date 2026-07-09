@@ -143,6 +143,50 @@ set_profile() {
     return 0
 }
 
+# ---------- CPU performance (intel_pstate) ----------
+# On battery: disable turbo + cap max perf at 30%  → longer runtime
+# On AC:      enable turbo + raise cap to 100%   → full performance
+# Only active when the intel_pstate driver reports "active" (i.e. the
+# CPU is actually using pstate scaling). On older systems with the
+# generic acpi-cpufreq driver this is a no-op.
+set_cpu_perf() {
+    local target="$1"   # performance | balanced
+    local no_turbo max_pct
+    case "$target" in
+        performance) no_turbo=0; max_pct=100 ;;
+        balanced)    no_turbo=1; max_pct=30  ;;
+        *) return 0 ;;
+    esac
+    local pstate_dir="/sys/devices/system/cpu/intel_pstate"
+    [ -d "$pstate_dir" ] || { info "intel_pstate not available, skipping CPU perf"; return 0; }
+    [ "$(cat "$pstate_dir/status" 2>/dev/null)" = "active" ] || {
+        info "intel_pstate driver not active, skipping CPU perf"; return 0;
+    }
+    if [ -w "$pstate_dir/no_turbo" ]; then
+        local cur
+        cur="$(cat "$pstate_dir/no_turbo" 2>/dev/null || echo ?)"
+        if [ "$cur" = "$no_turbo" ]; then
+            info "intel_pstate no_turbo already $cur"
+        elif printf '%s' "$no_turbo" > "$pstate_dir/no_turbo" 2>/tmp/gpu-power-switch.err; then
+            info "intel_pstate no_turbo -> $no_turbo"
+        else
+            warn "no_turbo write failed: $(cat /tmp/gpu-power-switch.err)"
+        fi
+    fi
+    if [ -w "$pstate_dir/max_perf_pct" ]; then
+        local cur_pct
+        cur_pct="$(cat "$pstate_dir/max_perf_pct" 2>/dev/null || echo ?)"
+        if [ "$cur_pct" = "$max_pct" ]; then
+            info "intel_pstate max_perf_pct already $cur_pct"
+        elif printf '%s' "$max_pct" > "$pstate_dir/max_perf_pct" 2>/tmp/gpu-power-switch.err; then
+            info "intel_pstate max_perf_pct -> $max_pct"
+        else
+            warn "max_perf_pct write failed: $(cat /tmp/gpu-power-switch.err)"
+        fi
+    fi
+    rm -f /tmp/gpu-power-switch.err
+}
+
 # ---------- subcommand: status (used by GUI) ----------
 if [ "$SUBCMD" = "status" ]; then
     read_ac_state; AC_ONLINE=$((1 - $?))
@@ -195,6 +239,8 @@ nvidia_pci=$NVIDIA_PCI
 rapl_w=$RAPL_W
 bat_w=$BAT_W
 bat_pct=$BAT_PCT
+cpu_no_turbo=$([ -r /sys/devices/system/cpu/intel_pstate/no_turbo ] && cat /sys/devices/system/cpu/intel_pstate/no_turbo || echo n/a)
+cpu_max_perf_pct=$([ -r /sys/devices/system/cpu/intel_pstate/max_perf_pct ] && cat /sys/devices/system/cpu/intel_pstate/max_perf_pct || echo n/a)
 EOF
     exit 0
 fi
@@ -266,5 +312,6 @@ if [ "$NVIDIA_OK" = 1 ] && [ -n "$DESIRED_GPU" ]; then
     set_gpu_power "$DESIRED_GPU"
 fi
 set_profile "$DESIRED_PROFILE"
+set_cpu_perf  "$DESIRED_PROFILE"
 
 exit 0
