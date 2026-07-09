@@ -1,0 +1,22 @@
+#!/bin/bash
+# gpu-power-switch-toggle — flip the global enabled flag.
+# Invoked by the GUI via pkexec.
+set -eu
+CONFIG_DIR="/etc/gpu-power-switch"
+ENABLED_FILE="$CONFIG_DIR/enabled"
+
+case "${1:-}" in
+    on|enable|1|true)  target=1 ;;
+    off|disable|0|false) target=0 ;;
+    *)
+        echo "usage: $0 on|off" >&2
+        exit 2
+        ;;
+esac
+
+mkdir -p "$CONFIG_DIR"
+printf '%s\n' "$target" > "$ENABLED_FILE"
+chmod 644 "$ENABLED_FILE" 2>/dev/null || true
+echo "$target" > "$ENABLED_FILE"
+logger -t gpu-power-switch "global enabled -> $target"
+exit 0

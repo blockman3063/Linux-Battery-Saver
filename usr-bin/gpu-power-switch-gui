@@ -1,0 +1,9 @@
+#!/bin/bash
+# gpu-power-switch-gui — launcher for the GTK4/libadwaita frontend.
+# Resolves the location of the python module relative to the install dir
+# (typically /usr/lib/gpu-power-switch/gui/gpu-power-switch-gui.py) and
+# execs it under python3.
+set -eu
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+GUI_DIR="$SCRIPT_DIR/gui"
+exec /usr/bin/env python3 "$GUI_DIR/gpu-power-switch-gui.py" "$@"

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Linux-Battery-Saver</vendor>
+  <vendor_url>https://github.com/blockman3063/Linux-Battery-Saver</vendor_url>
+
+  <!--
+    Single action covering every entry point the GUI may invoke. The
+    action's "exec.path" must point to a real, executable file — the
+    polkit agent only inspects the path of the pkexec target, not its
+    arguments, so we point it at the wrapper script which then dispatches
+    on its first argv.
+
+    `allow_active=yes` means the *currently active* local session user
+    is allowed without a password. This is appropriate for a single-user
+    laptop. If you share the machine, change to `auth_admin_keep` so
+    the user must type the admin password (and it is cached for 5 min).
+  -->
+  <action id="org.linuxbatterysaver.run">
+    <description>Linux Battery Saver — power / GPU control</description>
+    <message>Linux Battery Saver needs elevated rights to read power sensors and switch the GPU state</message>
+    <icon_name>battery</icon_name>
+    <defaults>
+      <allow_active>yes</allow_active>
+      <allow_inactive>yes</allow_inactive>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/gpu-power-switch/gpu-power-switch.sh</annotate>
+  </action>
+  <action id="org.linuxbatterysaver.toggle">
+    <description>Linux Battery Saver — toggle global auto-switch</description>
+    <message>Linux Battery Saver needs elevated rights to change the auto-switch flag</message>
+    <icon_name>battery</icon_name>
+    <defaults>
+      <allow_active>yes</allow_active>
+      <allow_inactive>yes</allow_inactive>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/gpu-power-switch/gpu-power-switch-toggle</annotate>
+  </action>
+</policyconfig>

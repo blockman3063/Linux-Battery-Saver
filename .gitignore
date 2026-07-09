@@ -5,5 +5,10 @@
 *.bak
 *.tmp
 
+# Python build artefacts
+__pycache__/
+*.pyc
+*.pyo
+
 # Local install overrides
 .env
