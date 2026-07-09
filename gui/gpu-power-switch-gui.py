@@ -43,6 +43,7 @@ APP_ID = "org.linuxbatterysaver.Gui"
 APP_VERSION = "0.2.0"
 SCRIPT_PATH = "/usr/lib/gpu-power-switch/gpu-power-switch.sh"
 TOGGLE_HELPER = "/usr/lib/gpu-power-switch/gpu-power-switch-toggle"
+MANUAL_HELPER = "/usr/lib/gpu-power-switch/gpu-power-switch-manual"
 SOCKET_PATH = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}") + "/gpu-power-switch.sock"
 
 POLL_INTERVAL_MS = 1500  # how often to refresh power/charge data
@@ -253,7 +254,10 @@ def read_enabled() -> bool:
 # Privileged actions via pkexec + polkit
 # ────────────────────────────────────────────────────────────────────
 
-def _pkexec(argv: list[str]) -> tuple[int, str]:
+def _pkexec_root(argv: list[str]) -> tuple[int, str]:
+    """Run argv[0] as root with polkit. Used for state-changing actions
+    where the user *will* see a polkit dialog the first time.
+    """
     if shutil.which("pkexec") is None:
         return 127, "pkexec not installed"
     try:
@@ -263,18 +267,43 @@ def _pkexec(argv: list[str]) -> tuple[int, str]:
         return 1, str(e)
 
 
+def _pkexec_status(argv: list[str]) -> tuple[int, str]:
+    """Same as _pkexec_root but with a longer timeout (helper sleeps
+    ~250 ms to compute RAPL delta). Used for status polls.
+    """
+    if shutil.which("pkexec") is None:
+        return 127, "pkexec not installed"
+    try:
+        r = subprocess.run(["pkexec", *argv], capture_output=True, text=True, timeout=5)
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except subprocess.SubprocessError as e:
+        return 1, str(e)
+
+
 def gpu_set_power(mode: str) -> tuple[bool, str]:
-    rc, msg = _pkexec([SCRIPT_PATH, "set-power", mode])
+    """Wake (mode='on') or suspend (mode='auto') the dGPU. This is the
+    action the user explicitly invoked — we also set/clear the manual
+    lock so AC events stop fighting the choice until the user re-enables
+    auto-mode in the GUI.
+    """
+    helper_action = "on" if mode == "on" else "auto"
+    rc, msg = _pkexec_root([MANUAL_HELPER, helper_action])
     return rc == 0, msg
 
 
 def gpu_set_profile(profile: str) -> tuple[bool, str]:
-    rc, msg = _pkexec([SCRIPT_PATH, "set-profile", profile])
+    rc, msg = _pkexec_root([SCRIPT_PATH, "set-profile", profile])
     return rc == 0, msg
 
 
 def gpu_set_enabled(enabled: bool) -> tuple[bool, str]:
-    rc, msg = _pkexec([TOGGLE_HELPER, "on" if enabled else "off"])
+    rc, msg = _pkexec_root([TOGGLE_HELPER, "on" if enabled else "off"])
+    return rc == 0, msg
+
+
+def gpu_set_manual_lock(locked: bool) -> tuple[bool, str]:
+    """Set/clear the manual-mode lock without touching GPU state."""
+    rc, msg = _pkexec_root([MANUAL_HELPER, "lock" if locked else "unlock"])
     return rc == 0, msg
 
 
@@ -616,24 +645,19 @@ class MainWindow(Adw.ApplicationWindow):
             self._toast("GPU → auto" if ok else f"Failed: {msg}", ok)
 
     def _on_manual_toggle(self, _src, state: bool) -> bool:
-        # True = follow AC (no manual lock) = enabled
-        # We use the manual.lock mechanism: if user wants auto, we clear the lock
-        # by setting GPU power to match the current AC state via the script.
-        # For simplicity, clearing the lock is done by `set-power` with current state.
-        if state:
-            # Switch ON auto-mode: clear lock by re-asserting current desired state
-            cur = self.gpu_state_row.get_subtitle() or ""
-            if cur == "on":
-                ok, msg = gpu_set_power("on")
-            else:
-                ok, msg = gpu_set_power("auto")
-            # Either way, clear the lock
-            Path("/var/lib/gpu-power-switch/manual.lock").unlink(missing_ok=True)
-            self._toast("Auto-switch re-enabled" if ok else f"Failed: {msg}", ok)
+        # state True = user wants auto-mode (follow AC).
+        # We just set/clear the lock; the next AC event (or one immediate
+        # status poll) will reflect the new state.
+        ok, msg = gpu_set_manual_lock(not state)
+        if ok:
+            self._toast(
+                "Auto-switch re-enabled" if state else
+                "Manual mode locked — AC events ignored", True
+            )
         else:
-            # Switch OFF auto-mode: just leave current state, no lock yet
-            # (lock is set by user pressing a manual button)
-            self._toast("Manual mode armed — next button press disables AC auto-switch", True)
+            self._toast(f"Failed: {msg}", False)
+            # revert the switch
+            self.manual_switch.set_state(state is False)
         return False
 
     def _on_global_toggle(self, _src, state: bool) -> bool:

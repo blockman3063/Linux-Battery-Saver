@@ -38,4 +38,14 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/gpu-power-switch/gpu-power-switch-toggle</annotate>
   </action>
+  <action id="org.linuxbatterysaver.manual">
+    <description>Linux Battery Saver — manual GPU control + lock</description>
+    <message>Linux Battery Saver needs elevated rights to set the GPU state and manual lock</message>
+    <icon_name>battery</icon_name>
+    <defaults>
+      <allow_active>yes</allow_active>
+      <allow_inactive>yes</allow_inactive>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/gpu-power-switch/gpu-power-switch-manual</annotate>
+  </action>
 </policyconfig>

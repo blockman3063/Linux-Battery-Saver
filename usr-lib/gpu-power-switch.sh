@@ -98,7 +98,11 @@ set_gpu_power() {
     local mode="$1"
     [ "$NVIDIA_OK" = 1 ] || return 0
     local ctrl="$NVIDIA_PCI/power/control"
-    [ -w "$ctrl" ] || { warn "$ctrl not writable"; return 0; }
+    [ -e "$ctrl" ] || { warn "$ctrl does not exist"; return 0; }
+    # We cannot pre-test with [ -w ] because sysfs is virtual; just try.
+    local current
+    current="$(cat "$ctrl" 2>/dev/null || echo unknown)"
+    info "GPU power/control current=$current requested=$mode"
     if printf '%s' "$mode" > "$ctrl" 2>/tmp/gpu-power-switch.err; then
         info "GPU power/control -> $mode"
     else
@@ -123,8 +127,8 @@ set_profile() {
     if command -v tlp >/dev/null 2>&1; then
         local tlp_mode
         case "$target" in
-            performance)  tlp_mode=AC ;;
-            balanced|power-saver) tlp_mode=BAT ;;
+            performance)  tlp_mode=ac ;;
+            balanced|power-saver) tlp_mode=bat ;;
         esac
         if tlp "$tlp_mode" 2>/tmp/gpu-power-switch.err; then
             info "tlp $tlp_mode"
@@ -203,8 +207,10 @@ if [ "$SUBCMD" = "set-power" ]; then
         *) err "set-power: expected on|auto (got '$target')"; exit 2 ;;
     esac
     set_gpu_power "$target"
-    # mark manual control so udev does not immediately override the user's choice
-    if [ "$target" = "on" ]; then touch "$LOCK_FILE"; else rm -f "$LOCK_FILE"; fi
+    # Note: we do NOT touch the manual lock here. The lock is managed
+    # exclusively by the GUI's "Auto-switch on AC change" switch — see
+    # _on_manual_toggle. set-power just changes the GPU state and lets
+    # the GUI re-enable auto-mode when the user is ready.
     exit 0
 fi
 
@@ -240,12 +246,25 @@ else
     AC_ONLINE=1
 fi
 
+# Idempotency: skip the write if the GPU is already in the desired state.
+# This stops the systemd oneshot from doubling up on the udev trigger.
+DESIRED_GPU="auto"
+DESIRED_PROFILE="balanced"
 if [ "$AC_ONLINE" = 1 ]; then
-    set_gpu_power on
-    set_profile performance
-else
-    set_gpu_power auto
-    set_profile balanced
+    DESIRED_GPU="on"
+    DESIRED_PROFILE="performance"
 fi
+if [ "$NVIDIA_OK" = 1 ] && [ -r "$NVIDIA_PCI/power/control" ]; then
+    cur="$(cat "$NVIDIA_PCI/power/control" 2>/dev/null || echo)"
+    if [ "$cur" = "$DESIRED_GPU" ]; then
+        info "GPU already in $cur, skipping"
+        DESIRED_GPU=""   # marker: no change needed
+    fi
+fi
+
+if [ "$NVIDIA_OK" = 1 ] && [ -n "$DESIRED_GPU" ]; then
+    set_gpu_power "$DESIRED_GPU"
+fi
+set_profile "$DESIRED_PROFILE"
 
 exit 0

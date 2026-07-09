@@ -24,6 +24,7 @@ APPSDIR      = $(DATADIR)/applications
 UDEV_FILE    = $(UDEV_RULESDIR)/99-gpu-power-switch.rules
 SCRIPT_FILE  = $(LIBDIR)/gpu-power-switch.sh
 TOGGLE_FILE  = $(LIBDIR)/gpu-power-switch-toggle
+MANUAL_FILE  = $(LIBDIR)/gpu-power-switch-manual
 GUI_DIR      = $(LIBDIR)/gui
 GUI_BIN      = $(BINDIR)/gpu-power-switch-gui
 SERVICE_FILE = $(SYSTEMD_DIR)/gpu-power-switch.service
@@ -33,6 +34,7 @@ DESKTOP_FILE = $(APPSDIR)/linux-battery-saver.desktop
 SRC_UDEV     = udev/99-gpu-power-switch.rules
 SRC_SCRIPT   = usr-lib/gpu-power-switch.sh
 SRC_TOGGLE   = usr-lib/gpu-power-switch-toggle
+SRC_MANUAL   = usr-lib/gpu-power-switch-manual
 SRC_GUI_LAUNCHER = usr-bin/gpu-power-switch-gui
 SRC_GUI_PY  = gui/gpu-power-switch-gui.py
 SRC_SERVICE  = systemd/gpu-power-switch.service
@@ -50,6 +52,7 @@ install-cli:
 	install -m 644 "$(SRC_UDEV)"    "$(UDEV_FILE)"
 	install -m 755 "$(SRC_SCRIPT)"  "$(SCRIPT_FILE)"
 	install -m 755 "$(SRC_TOGGLE)"  "$(TOGGLE_FILE)"
+	install -m 755 "$(SRC_MANUAL)"  "$(MANUAL_FILE)"
 	install -m 644 "$(SRC_SERVICE)" "$(SERVICE_FILE)"
 	udevadm control --reload-rules
 	udevadm trigger --subsystem-match=power_supply
@@ -74,7 +77,7 @@ uninstall:
 	rm -f "$(SERVICE_FILE)"
 	-systemctl daemon-reload
 	@echo ">>> Removing scripts + udev rule"
-	rm -f "$(SCRIPT_FILE)" "$(TOGGLE_FILE)"
+	rm -f "$(SCRIPT_FILE)" "$(TOGGLE_FILE)" "$(MANUAL_FILE)"
 	rm -rf "$(GUI_DIR)"
 	rmdir "$(LIBDIR)" 2>/dev/null || true
 	rm -f "$(UDEV_FILE)" "$(GUI_BIN)" "$(POLICY_FILE)" "$(DESKTOP_FILE)"
@@ -87,6 +90,7 @@ dry-run:
 	@echo "  $(SRC_UDEV)    -> $(UDEV_FILE)"
 	@echo "  $(SRC_SCRIPT)  -> $(SCRIPT_FILE)"
 	@echo "  $(SRC_TOGGLE)  -> $(TOGGLE_FILE)"
+	@echo "  $(SRC_MANUAL)  -> $(MANUAL_FILE)"
 	@echo "  $(SRC_SERVICE) -> $(SERVICE_FILE)"
 	@echo "Would install GUI:"
 	@echo "  $(SRC_GUI_PY)        -> $(GUI_DIR)/gpu-power-switch-gui.py"
@@ -97,5 +101,6 @@ dry-run:
 test:
 	@bash -n "$(SRC_SCRIPT)" && echo "script syntax OK"
 	@bash -n "$(SRC_TOGGLE)" && echo "toggle syntax OK"
+	@bash -n "$(SRC_MANUAL)" && echo "manual syntax OK"
 	@python3 -c "import xml.etree.ElementTree as ET; ET.parse('$(SRC_POLICY)')" && echo "policy XML OK"
 	@python3 -c "import py_compile; py_compile.compile('$(SRC_GUI_PY)', doraise=True)" && echo "gui python OK"

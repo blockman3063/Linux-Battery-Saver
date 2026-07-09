@@ -1,0 +1,35 @@
+#!/bin/bash
+# gpu-power-switch-manual — toggle the manual-mode lock + the GPU state.
+# Invoked by the GUI via pkexec. Arguments:
+#   on   — set GPU to on, set the manual lock (ignore AC events)
+#   auto — set GPU to auto, clear the manual lock
+#   lock — only set the lock, leave GPU state as-is
+#   unlock — only clear the lock, leave GPU state as-is
+set -eu
+SCRIPT="/usr/lib/gpu-power-switch/gpu-power-switch.sh"
+LOCK="/var/lib/gpu-power-switch/manual.lock"
+
+action="${1:-}"
+case "$action" in
+    on)
+        "$SCRIPT" set-power on
+        mkdir -p "$(dirname "$LOCK")"
+        : > "$LOCK"
+        ;;
+    auto)
+        "$SCRIPT" set-power auto
+        rm -f "$LOCK"
+        ;;
+    lock)
+        mkdir -p "$(dirname "$LOCK")"
+        : > "$LOCK"
+        ;;
+    unlock)
+        rm -f "$LOCK"
+        ;;
+    *)
+        echo "usage: $0 on|auto|lock|unlock" >&2
+        exit 2
+        ;;
+esac
+exit 0
