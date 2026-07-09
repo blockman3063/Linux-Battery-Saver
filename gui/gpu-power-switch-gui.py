@@ -548,8 +548,30 @@ class MainWindow(Adw.ApplicationWindow):
         self.gpu_group.add(self.gpu_state_row)
         self.gpu_group.add(self.gpu_pci_row)
 
-        # Manual action row with two buttons
-        self.gpu_action_row = Adw.ActionRow(title="Manual control", subtitle="Override automatic AC switching")
+        # Manual control: one switch + two action buttons.
+        #
+        # The switch decides WHO controls the GPU:
+        #   OFF  → "Manual" — the buttons below are active, the lock is
+        #          set so AC events do not override the user's choice.
+        #   ON   → "Auto"   — the lock is cleared and the udev rule
+        #          follows AC. The buttons are hidden.
+        #
+        # The buttons set the actual power state when in Manual mode.
+        self.gpu_mode_row = Adw.ActionRow(
+            title="Auto-switch on AC change",
+            subtitle="…",
+        )
+        self.gpu_mode_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.gpu_mode_switch.connect("state-set", self._on_mode_toggle)
+        self.gpu_mode_row.add_suffix(self.gpu_mode_switch)
+        self.gpu_mode_row.set_activatable_widget(self.gpu_mode_switch)
+        self.gpu_group.add(self.gpu_mode_row)
+
+        # Two action buttons; visible only in Manual mode.
+        self.gpu_action_row = Adw.ActionRow(
+            title="Manual override",
+            subtitle="Click a button to force the dGPU into this state",
+        )
         self.btn_gpu_on = Gtk.Button(label="Wake (on)", valign=Gtk.Align.CENTER,
                                      css_classes=("suggested-action",))
         self.btn_gpu_on.connect("clicked", lambda *_: self._do_action("gpu_on"))
@@ -559,15 +581,7 @@ class MainWindow(Adw.ApplicationWindow):
         box.append(self.btn_gpu_on)
         box.append(self.btn_gpu_off)
         self.gpu_action_row.add_suffix(box)
-        self.gpu_action_row.set_activatable_widget(self.btn_gpu_on)
         self.gpu_group.add(self.gpu_action_row)
-
-        # Manual mode indicator
-        self.manual_row = Adw.ActionRow(title="Auto-switch on AC change", subtitle="…")
-        self.manual_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-        self.manual_switch.connect("state-set", self._on_manual_toggle)
-        self.manual_row.add_suffix(self.manual_switch)
-        self.gpu_group.add(self.manual_row)
 
         v.append(self.gpu_group)
 
@@ -634,15 +648,25 @@ class MainWindow(Adw.ApplicationWindow):
             self.gpu_pci_row.set_subtitle("—")
 
         # Auto-switch state
-        self.manual_switch.set_state(not r.manual)
-        self.manual_row.set_subtitle(
-            "Following AC state" if not r.manual else
-            "Manual control active — AC events ignored"
+        #   switch ON  → no lock, follow AC
+        #   switch OFF → lock set, manual mode
+        self.gpu_mode_switch.set_state(not r.manual)
+        if r.manual:
+            self.gpu_mode_row.set_subtitle(
+                "Manual mode — dGPU stays in the state you chose below"
+            )
+        else:
+            self.gpu_mode_row.set_subtitle(
+                "Following AC state automatically"
+            )
+        # Buttons only meaningful in Manual mode
+        in_manual = r.manual
+        self.btn_gpu_on.set_sensitive(
+            in_manual and r.gpu_present and r.gpu_control != "on"
         )
-        # Manual buttons disabled in pure-auto mode? No — user can still
-        # force a state; it sets the lock.
-        self.btn_gpu_on.set_sensitive(r.gpu_present and r.gpu_control != "on")
-        self.btn_gpu_off.set_sensitive(r.gpu_present and r.gpu_control != "auto")
+        self.btn_gpu_off.set_sensitive(
+            in_manual and r.gpu_present and r.gpu_control != "auto"
+        )
 
         # Global switch (header)
         self.global_switch.set_state(r.enabled)
@@ -676,20 +700,25 @@ class MainWindow(Adw.ApplicationWindow):
             ok, msg = gpu_set_power("auto")
             self._toast("GPU → auto" if ok else f"Failed: {msg}", ok)
 
-    def _on_manual_toggle(self, _src, state: bool) -> bool:
-        # state True = user wants auto-mode (follow AC).
-        # We just set/clear the lock; the next AC event (or one immediate
-        # status poll) will reflect the new state.
-        ok, msg = gpu_set_manual_lock(not state)
-        if ok:
-            self._toast(
-                "Auto-switch re-enabled" if state else
-                "Manual mode locked — AC events ignored", True
-            )
+    def _on_mode_toggle(self, _src, state: bool) -> bool:
+        # state True = user wants auto (no lock, follow AC).
+        # state False = user wants manual (set lock so AC does not override).
+        if state:
+            ok, msg = gpu_set_manual_lock(False)   # unlock
+            if ok:
+                # Re-assert the AC state right now so the GPU matches
+                # AC without waiting for the next udev event.
+                self._toast("Auto-switch re-enabled", True)
+            else:
+                self._toast(f"Failed: {msg}", False)
+                self.gpu_mode_switch.set_state(False)
         else:
-            self._toast(f"Failed: {msg}", False)
-            # revert the switch
-            self.manual_switch.set_state(state is False)
+            ok, msg = gpu_set_manual_lock(True)    # lock
+            if ok:
+                self._toast("Manual mode — dGPU locked to your choice", True)
+            else:
+                self._toast(f"Failed: {msg}", False)
+                self.gpu_mode_switch.set_state(True)
         return False
 
     def _on_global_toggle(self, _src, state: bool) -> bool:

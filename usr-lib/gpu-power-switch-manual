@@ -2,23 +2,24 @@
 # gpu-power-switch-manual — toggle the manual-mode lock + the GPU state.
 # Invoked by the GUI via pkexec. Arguments:
 #   on   — set GPU to on, set the manual lock (ignore AC events)
-#   auto — set GPU to auto, clear the manual lock
+#   auto — set GPU to auto, set the manual lock (ignore AC events)
 #   lock — only set the lock, leave GPU state as-is
 #   unlock — only clear the lock, leave GPU state as-is
+#
+# The lock is set by both on and auto: it is the marker that the user
+# has taken manual control. The lock is only cleared by the GUI when
+# the user flips the "Auto-switch on AC change" switch back on, which
+# calls `unlock` (and then triggers a re-evaluation by the udev rule).
 set -eu
 SCRIPT="/usr/lib/gpu-power-switch/gpu-power-switch.sh"
 LOCK="/var/lib/gpu-power-switch/manual.lock"
 
 action="${1:-}"
 case "$action" in
-    on)
-        "$SCRIPT" set-power on
+    on|auto)
+        "$SCRIPT" set-power "$action"
         mkdir -p "$(dirname "$LOCK")"
         : > "$LOCK"
-        ;;
-    auto)
-        "$SCRIPT" set-power auto
-        rm -f "$LOCK"
         ;;
     lock)
         mkdir -p "$(dirname "$LOCK")"
@@ -26,6 +27,10 @@ case "$action" in
         ;;
     unlock)
         rm -f "$LOCK"
+        # Re-evaluate the current AC state so the dGPU / profile /
+        # CPU perf snap to what AC says right now, without waiting for
+        # the next udev event.
+        exec "$SCRIPT"
         ;;
     *)
         echo "usage: $0 on|auto|lock|unlock" >&2
