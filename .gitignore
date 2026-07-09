@@ -1,0 +1,9 @@
+# Editor / OS junk
+*.swp
+*~
+.DS_Store
+*.bak
+*.tmp
+
+# Local install overrides
+.env

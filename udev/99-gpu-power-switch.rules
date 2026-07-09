@@ -1,0 +1,7 @@
+# gpu-power-switch — toggle NVIDIA dGPU + system power profile on AC change
+# Triggered on any power_supply whose `online` attribute flips.
+#
+# NOTE: udev RUN executes synchronously and inherits a minimal environment.
+# Do not rely on PATH; the script uses absolute paths and command -v lookups.
+
+SUBSYSTEM=="power_supply", ATTR{online}=="*", RUN+="/usr/lib/gpu-power-switch/gpu-power-switch.sh"

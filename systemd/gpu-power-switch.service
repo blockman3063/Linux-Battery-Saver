@@ -1,0 +1,14 @@
+[Unit]
+Description=GPU Power Auto Switch — apply current AC state at boot
+Documentation=man:power-profiles-daemon(1)
+# Wait for power-profiles-daemon so powerprofilesctl is callable on first run.
+After=power-profiles-daemon.service
+Wants=power-profiles-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/gpu-power-switch/gpu-power-switch.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
