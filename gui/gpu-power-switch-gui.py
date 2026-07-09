@@ -87,17 +87,42 @@ def _read_int(path: Path) -> Optional[int]:
 def read_status_via_helper(use_pkexec: bool = True) -> dict:
     """Run the helper script (status) and parse its key=value output.
 
-    When ``use_pkexec`` is True the GUI uses pkexec + polkit so that
-    RAPL ``energy_uj`` (root-only) is readable. The polkit policy is
-    ``allow_active=yes`` so the user is NOT prompted on each call.
+    The helper needs root to read RAPL energy_uj and the power_supply
+    files; we use pkexec + polkit for that. The polkit policy is
+    allow_active=yes so the user is NOT prompted for a password on a
+    single-user machine — but on first run, the polkit GUI agent may
+    not yet be registered, in which case pkexec returns 1 with an
+    empty body. We fall back to running the helper without pkexec
+    (which succeeds for the fields that do not need root) and then
+    layer the root-only fields on top once the polkit agent responds.
     """
     out: dict = {}
-    argv = [SCRIPT_PATH, "status"]
+    # Try pkexec first (root) so we get RAPL
     if use_pkexec and shutil.which("pkexec"):
-        argv = ["pkexec", *argv]
+        try:
+            r = subprocess.run(
+                ["pkexec", SCRIPT_PATH, "status"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                for line in r.stdout.splitlines():
+                    if "=" in line:
+                        k, _, v = line.partition("=")
+                        out[k.strip()] = v.strip()
+                return out
+        except (subprocess.SubprocessError, OSError):
+            pass
+    # Fallback: run without pkexec. We get the fields that are
+    # world-readable (gpu_control, ac_online, enabled, ...). RAPL and
+    # the manual lock file are NOT included; the poller will retry
+    # pkexec on the next tick and eventually succeed once the polkit
+    # agent is registered.
     try:
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=5, check=False)
-        if r.returncode == 0:
+        r = subprocess.run(
+            [SCRIPT_PATH, "status"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if r.returncode == 0 and r.stdout.strip():
             for line in r.stdout.splitlines():
                 if "=" in line:
                     k, _, v = line.partition("=")
@@ -379,7 +404,16 @@ class Poller(GObject.Object):
                     cpu_w = sum(float(v) for v in vals)
                 except ValueError:
                     cpu_w = None
-            if cpu_w is None:
+            # If helper ran without root (no RAPL data) AND we cannot
+            # read it ourselves either, leave cpu_w as None — the UI
+            # shows "n/a (no RAPL)". The poller will retry pkexec on
+            # subsequent ticks; once the polkit agent is registered it
+            # will succeed and the row will fill in.
+            if cpu_w is None and helper.get("rapl_w") is not None:
+                # helper ran but reported empty RAPL → we already know
+                # the answer; do not waste 250 ms on read_rapl_w()
+                pass
+            elif cpu_w is None:
                 cpu_w = read_rapl_w()
 
             gpu_w = read_nvidia_power()
@@ -468,8 +502,6 @@ class MainWindow(Adw.ApplicationWindow):
         self._poller = Poller()
         self._poller.connect("reading", self._on_reading)
         self._poller.start()
-
-        # Auto-close on launch? (start hidden → handled in application)
 
     # ─── build UI ───
 

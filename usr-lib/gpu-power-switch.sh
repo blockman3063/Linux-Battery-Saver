@@ -200,7 +200,8 @@ if [ "$SUBCMD" = "status" ]; then
     RAPL_W=""
     BAT_W=""
     BAT_PCT=""
-    # RAPL package power
+    # RAPL package power — best-effort; if not readable, we just leave
+    # the value empty so the GUI can show "n/a" instead of erroring.
     for d in /sys/class/powercap/intel-rapl*; do
         [ -r "$d/name" ] || continue
         n="$(cat "$d/name" 2>/dev/null)" || continue
@@ -209,22 +210,24 @@ if [ "$SUBCMD" = "status" ]; then
             *) continue ;;
         esac
         [ -r "$d/energy_uj" ] || continue
-        a="$(cat "$d/energy_uj")" 2>/dev/null || continue
+        a="$(cat "$d/energy_uj" 2>/dev/null)" || continue
         sleep 0.25
-        b="$(cat "$d/energy_uj")" 2>/dev/null || continue
+        b="$(cat "$d/energy_uj" 2>/dev/null)" || continue
         [ -n "$a" ] && [ -n "$b" ] && [ "$b" -gt "$a" ] || continue
         w=$(awk -v a="$a" -v b="$b" 'BEGIN{printf "%.2f",(b-a)/1e6/0.25}')
         RAPL_W="${RAPL_W:+$RAPL_W,}$w"
     done
-    # Battery
+    # Battery — best-effort too
     for b in /sys/class/power_supply/BAT*; do
         [ -d "$b" ] || continue
         if [ -r "$b/power_now" ]; then
             pw=$(cat "$b/power_now" 2>/dev/null)
             [ -n "$pw" ] && BAT_W="$(awk -v x="$pw" 'BEGIN{printf "%.2f",x/1e6}')"
         fi
-        cp=$(cat "$b/capacity" 2>/dev/null)
-        [ -n "$cp" ] && BAT_PCT="$cp"
+        if [ -r "$b/capacity" ]; then
+            cp=$(cat "$b/capacity" 2>/dev/null)
+            [ -n "$cp" ] && BAT_PCT="$cp"
+        fi
         break
     done
     cat <<EOF
