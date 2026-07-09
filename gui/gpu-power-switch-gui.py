@@ -335,14 +335,14 @@ class Poller(GObject.Object):
     def _run(self) -> None:
         prev_energy = None
         prev_time = None
-        # Cache helper-script status; we need an RAPL reading once every
-        # ~1s, but the helper-script has its own 0.25s internal sleep, so
-        # we do not call it on every poll — instead, every 4th poll uses
-        # it for CPU + battery, the other ticks use plain sysfs.
+        # First poll: use the helper (which has root) immediately so the
+        # user does not see an empty CPU row for 6 seconds. Subsequent
+        # polls use helper only every 4th tick to avoid the 0.25 s sleep
+        # on every refresh.
         cycle = 0
         while not self._stop.is_set():
             cycle += 1
-            use_helper = (cycle % 4 == 0)
+            use_helper = (cycle == 1) or (cycle % 4 == 0)
             helper = read_status_via_helper() if use_helper else {}
 
             bat_w = None
