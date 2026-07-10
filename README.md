@@ -72,7 +72,7 @@ sudo apt install power-profiles-daemon
 sudo apt install tlp
 
 # 2) install everything
-cd /run/media/pat/Data/Project/Linux-Battery-Saver
+cd Linux-Battery-Saver
 sudo make install           # or: sudo ./install.sh
 ```
 
