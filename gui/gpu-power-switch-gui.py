@@ -708,7 +708,9 @@ class MainWindow(Adw.ApplicationWindow):
         # Auto-switch state
         #   switch ON  → no lock, follow AC
         #   switch OFF → lock set, manual mode
+        self.gpu_mode_switch.handler_block_by_func(self._on_mode_toggle)
         self.gpu_mode_switch.set_state(not r.manual)
+        self.gpu_mode_switch.handler_unblock_by_func(self._on_mode_toggle)
         if r.manual:
             self.gpu_mode_row.set_subtitle(
                 "Manual mode — dGPU stays in the state you chose below"
@@ -726,11 +728,31 @@ class MainWindow(Adw.ApplicationWindow):
         last = self._settings.get_string("last-manual-gpu-power")
         if last not in ("on", "auto"):
             last = "auto"
-        self.btn_gpu_on.set_sensitive(r.gpu_present and last != "on")
-        self.btn_gpu_off.set_sensitive(r.gpu_present and last != "auto")
+        # Highlight exactly one button so the user can see which
+        # action is available next. We move the suggested-action
+        # class between the two buttons depending on the last choice.
+        if not r.gpu_present:
+            self.btn_gpu_on.set_sensitive(False)
+            self.btn_gpu_off.set_sensitive(False)
+            self.btn_gpu_on.remove_css_class("suggested-action")
+            self.btn_gpu_off.remove_css_class("suggested-action")
+        else:
+            wake_active = last == "auto"
+            self.btn_gpu_on.set_sensitive(wake_active)
+            self.btn_gpu_off.set_sensitive(not wake_active)
+            if wake_active:
+                self.btn_gpu_on.add_css_class("suggested-action")
+                self.btn_gpu_off.remove_css_class("suggested-action")
+            else:
+                self.btn_gpu_off.add_css_class("suggested-action")
+                self.btn_gpu_on.remove_css_class("suggested-action")
 
-        # Global switch (header)
+        # Global switch (header) — temporarily block state-set so the
+        # programmatic update does not call _on_global_toggle and write
+        # the file a second time.
+        self.global_switch.handler_block_by_func(self._on_global_toggle)
         self.global_switch.set_state(r.enabled)
+        self.global_switch.handler_unblock_by_func(self._on_global_toggle)
 
     def _find_nvidia_pci_addr(self) -> Optional[str]:
         for d in Path("/sys/bus/pci/devices").iterdir():
