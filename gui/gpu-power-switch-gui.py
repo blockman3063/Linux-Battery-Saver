@@ -655,6 +655,19 @@ class MainWindow(Adw.ApplicationWindow):
     # ─── actions / updates ───
 
     def _on_reading(self, _src, r: PowerReading) -> None:
+        # Detect AC state changes and flush stale display values.
+        if hasattr(self, '_prev_ac') and self._prev_ac != r.ac_online:
+            # AC just toggled — clear all dynamic rows so old values
+            # don't linger until the next helper tick.
+            self.power_row.set_subtitle("—")
+            self.cpu_row.set_subtitle("—")
+            self.gpu_power_row.set_subtitle("—")
+            self.charge_row.set_subtitle("—")
+            self.runtime_row.set_subtitle("—")
+            self.charge_row.set_title("Charge")
+            self.runtime_row.set_title("Estimated runtime")
+        self._prev_ac = r.ac_online
+
         # Power row — keep last subtitle if we have no battery data
         # this tick (e.g. on battery-based systems with no power_now).
         # upower always reports energy-rate as a positive number. The
