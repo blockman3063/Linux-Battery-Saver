@@ -644,17 +644,11 @@ class MainWindow(Adw.ApplicationWindow):
         # direction (charging vs discharging) is given by ac_online +
         # the kernel's "status" sysfs.
         if r.ac_online:
-            # On AC: estimate system total from CPU + GPU + platform.
-            # Non-helper ticks won't have CPU/GPU data — keep last value.
-            est = 8.0
-            have_cpu = r.cpu_w is not None
-            have_gpu = r.gpu_w is not None
-            if have_cpu: est += r.cpu_w
-            if have_gpu: est += r.gpu_w
+            # On AC: component breakdown is shown in CPU / GPU rows below;
+            # don't recompute a live estimate that fluctuates with the
+            # measurement cycle. Just show "on AC".
             self.power_row.set_title("System")
-            if have_cpu or have_gpu:
-                self.power_row.set_subtitle(f"~{est:.1f} W · on AC")
-            # else: keep previous subtitle (cpu/gpu will be back next helper tick)
+            self.power_row.set_subtitle("on AC")
         elif r.battery_w is not None and r.battery_w > 0:
             parts = [f"Discharge {r.battery_w:.1f} W", "on battery"]
             self.power_row.set_title("System")
