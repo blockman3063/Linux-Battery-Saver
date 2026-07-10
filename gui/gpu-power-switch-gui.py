@@ -670,20 +670,11 @@ class MainWindow(Adw.ApplicationWindow):
         )
         if r.gpu_w is not None:
             self.gpu_power_row.set_subtitle(f"{r.gpu_w:.1f} W")
-        elif not r.gpu_present:
-            # Driver not loaded — GPU is off, but system power still
-            # includes ~10W overhead (screen, chipset, wifi). Show
-            # an estimate: total battery discharge − CPU − overhead.
-            est = None
-            if r.battery_w and r.battery_w > 0 and r.cpu_w:
-                # Rough baseline: ~8W for non-CPU, non-GPU system
-                est = max(0, r.battery_w - r.cpu_w - 8)
-            if est and est > 5:
-                self.gpu_power_row.set_subtitle(
-                    f"~{est:.1f} W (estimate, driver off)"
-                )
-            else:
-                self.gpu_power_row.set_subtitle("Offline (driver unloaded)")
+        elif r.battery_w and r.battery_w > 0 and r.cpu_w:
+            # Driver not loaded — derive GPU-side power from the rest:
+            # total battery draw minus RAPL minus fixed overhead.
+            other = max(0, r.battery_w - r.cpu_w - 8)
+            self.gpu_power_row.set_subtitle(f"~{other:.1f} W (no driver)")
         else:
             self.gpu_power_row.set_subtitle("n/a (no nvidia-smi)")
 
