@@ -5,13 +5,19 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build tarball
+      - name: Install packaging tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev rpm
+
+      - name: Build packages
         run: |
           set -eu
           VER="${GITHUB_REF_NAME#v}"
@@ -21,13 +27,37 @@ jobs:
           for dir in usr-lib usr-bin gui desktop udev systemd polkit modprobe.d; do
             [ -d "$dir" ] && cp -r "$dir" "dist/$D/"
           done
-          cp install.sh uninstall.sh Makefile LICENSE README.md "dist/$D/"
           cd dist
-          tar czf "$D.tar.gz" "$D"
-          ls -lh *.tar.gz
+
+          # ---- source tarball ----
+          tar czf "gpu-power-switch-$VER.tar.gz" "$D"
+
+          # ---- .deb ----
+          mkdir -p "$D/DEBIAN"
+          printf 'Package: gpu-power-switch\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: amd64\nDepends: power-profiles-daemon, python3 (>= 3.11), python3-gi, gir1.2-adw-1, upower\nMaintainer: blockman3063 <blockman3063@gmail.com>\nHomepage: https://github.com/blockman3063/Linux-Battery-Saver\nDescription: Auto-toggle NVIDIA dGPU + system profile on AC events\n Monitors AC power via udev, loads/unloads NVIDIA driver,\n switches CPU profile between perf (AC) and balanced (battery).\n GTK4/libadwaita GUI for monitoring and manual GPU control.\n' > "$D/DEBIAN/control"
+          mkdir -p "$D/etc/gpu-power-switch"
+          echo 1 > "$D/etc/gpu-power-switch/enabled"
+          printf '/etc/gpu-power-switch/enabled\n' > "$D/DEBIAN/conffiles"
+          printf '#!/bin/sh\nset -e\ncase "$1" in\n  configure)\n    udevadm control --reload-rules 2>/dev/null || true\n    udevadm trigger --subsystem-match=power_supply --action=change 2>/dev/null || true\n    systemctl daemon-reload 2>/dev/null || true\n    ;;\nesac\n' > "$D/DEBIAN/postinst"
+          chmod 755 "$D/DEBIAN/postinst"
+          dpkg-deb --build "$D"
+          mv "$D.deb" "gpu-power-switch-$VER.deb"
+
+          # ---- .rpm ----
+          mkdir -p rpmbuild/{SPECS,SOURCES}
+          printf 'Summary: Auto-toggle NVIDIA dGPU on AC events\nName: gpu-power-switch\nVersion: %s\nRelease: 1\nLicense: MIT\nURL: https://github.com/blockman3063/Linux-Battery-Saver\nBuildArch: noarch\nRequires: power-profiles-daemon, python3-gobject, python3-adwaita, upower\n%%description\nMonitors AC power state via udev, dynamically loads/unloads\nNVIDIA driver, switches CPU profile between perf (AC) and\nbalanced (battery). GTK4/libadwaita GUI included.\n%%install\nmkdir -p %%{buildroot}%%{_prefix}/lib/gpu-power-switch\nmkdir -p %%{buildroot}%%{_bindir}\nmkdir -p %%{buildroot}%%{_sysconfdir}/gpu-power-switch\ncp -r %s/usr-lib/* %%{buildroot}%%{_prefix}/lib/gpu-power-switch/\ncp -r %s/gui %%{buildroot}%%{_prefix}/lib/gpu-power-switch/\ncp %s/usr-bin/* %%{buildroot}%%{_bindir}/\n%%files\n%%{_prefix}/lib/gpu-power-switch/*\n%%{_bindir}/gpu-power-switch-gui\n%%config /etc/gpu-power-switch/\n' "$VER" "$D" "$D" "$D" > rpmbuild/SPECS/gpu-power-switch.spec
+          tar czf rpmbuild/SOURCES/gpu-power-switch.tar.gz "$D"
+          rpmbuild -bb --define "_topdir $PWD/rpmbuild" rpmbuild/SPECS/gpu-power-switch.spec 2>&1 || true
+          cp rpmbuild/RPMS/noarch/gpu-power-switch*.rpm "gpu-power-switch-$VER.noarch.rpm" 2>/dev/null || true
+          ls -lh *.tar.gz *.deb *.rpm 2>/dev/null || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.tar.gz
+          files: |
+            dist/gpu-power-switch-*.tar.gz
+            dist/gpu-power-switch-*.deb
+            dist/gpu-power-switch-*.rpm
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
