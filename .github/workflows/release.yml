@@ -34,7 +34,7 @@ jobs:
 
           # ---- .deb ----
           mkdir -p "$D/DEBIAN"
-          printf 'Package: gpu-power-switch\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: amd64\nDepends: power-profiles-daemon, python3 (>= 3.11), python3-gi, gir1.2-adw-1, upower\nMaintainer: blockman3063 <blockman3063@gmail.com>\nHomepage: https://github.com/blockman3063/Linux-Battery-Saver\nDescription: Auto-toggle NVIDIA dGPU + system profile on AC events\n Monitors AC power via udev, loads/unloads NVIDIA driver,\n switches CPU profile between perf (AC) and balanced (battery).\n GTK4/libadwaita GUI for monitoring and manual GPU control.\n' > "$D/DEBIAN/control"
+          printf 'Package: gpu-power-switch\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: amd64\nDepends: power-profiles-daemon, python3 (>= 3.11), python3-gi, gir1.2-adw-1, upower\nMaintainer: blockman3063 <blockman3063@gmail.com>\nHomepage: https://github.com/blockman3063/Linux-Battery-Saver\nDescription: Auto-toggle NVIDIA dGPU + system profile on AC events\n Monitors AC power via udev, loads/unloads NVIDIA driver,\n switches CPU profile between perf (AC) and balanced (battery).\n GTK4/libadwaita GUI for monitoring and manual GPU control.\n' "$VER" > "$D/DEBIAN/control"
           mkdir -p "$D/etc/gpu-power-switch"
           echo 1 > "$D/etc/gpu-power-switch/enabled"
           printf '/etc/gpu-power-switch/enabled\n' > "$D/DEBIAN/conffiles"
