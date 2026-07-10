@@ -68,6 +68,7 @@ class PowerReading:
     enabled: bool
     manual: bool
     bat_time: str                # upower's "time to empty" / "time to full"
+    helper_ran: bool             # True iff the helper was invoked this tick
     timestamp: float
 
 
@@ -134,7 +135,15 @@ def read_status_via_helper(use_pkexec: bool = True) -> dict:
 
 
 def read_battery() -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """Return (discharge_W, charge_pct, now_Wh, full_Wh)."""
+    """Return (discharge_W, charge_pct, now_Wh, full_Wh).
+
+    The kernel may expose the battery either as energy_* (Wh, in µWh
+    units) or charge_* (µAh, no Wh without voltage). For the energy_*
+    case we can directly compute Wh; for the charge_* case we have
+    no voltage-at-rest data so the Wh values are returned as None —
+    callers that need Wh should fall back to upower (which has the
+    proper voltage) instead of guessing.
+    """
     base = Path("/sys/class/power_supply")
     if not base.exists():
         return None, None, None, None
@@ -143,16 +152,12 @@ def read_battery() -> tuple[Optional[float], Optional[float], Optional[float], O
     for bat in base.iterdir():
         if not _BAT_RE.match(bat.name):
             continue
-        if now_wh is None:
-            p_now = _read_int(bat / "energy_now") or _read_int(bat / "charge_now")
-            p_full = _read_int(bat / "energy_full") or _read_int(bat / "charge_full")
+        if now_wh is None and (bat / "energy_now").exists() and (bat / "energy_full").exists():
+            p_now = _read_int(bat / "energy_now")
+            p_full = _read_int(bat / "energy_full")
             if p_now is not None and p_full is not None:
-                if (bat / "energy_now").exists():
-                    now_wh = p_now / 1_000_000.0
-                    full_wh = p_full / 1_000_000.0
-                else:
-                    now_wh = None
-                    full_wh = p_full / 1_000_000.0
+                now_wh = p_now / 1_000_000.0
+                full_wh = p_full / 1_000_000.0
         p_power = _read_int(bat / "power_now")
         if p_power is not None:
             power_w = p_power / 1_000_000.0
@@ -347,6 +352,8 @@ class Poller(GObject.Object):
         super().__init__()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        # Optional debug log; set GPU_PSWITCH_DEBUG=1 to enable.
+        self._debug = bool(os.environ.get("GPU_PSWITCH_DEBUG"))
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -366,9 +373,6 @@ class Poller(GObject.Object):
         # polls use helper only every 4th tick to avoid the 0.25 s sleep
         # on every refresh.
         cycle = 0
-        # Optional debug log; set GPU_PSWITCH_DEBUG=1 to enable.
-        import os
-        self._debug = bool(os.environ.get("GPU_PSWITCH_DEBUG"))
         while not self._stop.is_set():
             cycle += 1
             use_helper = (cycle == 1) or (cycle % 4 == 0)
@@ -476,6 +480,7 @@ class Poller(GObject.Object):
                 enabled=enabled,
                 manual=manual,
                 bat_time=bat_time,
+                helper_ran=use_helper,
                 timestamp=time.time(),
             )
             GLib.idle_add(lambda r=reading: self.emit("reading", r) or False)
@@ -614,16 +619,6 @@ class MainWindow(Adw.ApplicationWindow):
     # ─── actions / updates ───
 
     def _on_reading(self, _src, r: PowerReading) -> None:
-        # Power row
-        parts = []
-        if r.battery_w is not None and r.battery_w > 0:
-            parts.append(f"Discharge {r.battery_w:.1f} W")
-        if r.battery_w is not None and r.battery_w < 0:
-            parts.append(f"Charging {-r.battery_w:.1f} W")
-        if r.ac_online:
-            parts.append("on AC")
-        else:
-            parts.append("on battery")
         # Power row — keep last subtitle if we have no battery data
         # this tick (e.g. on battery-based systems with no power_now).
         # upower always reports energy-rate as a positive number. The
@@ -631,9 +626,11 @@ class MainWindow(Adw.ApplicationWindow):
         # the kernel's "status" sysfs.
         if r.battery_w is not None and r.battery_w > 0:
             if r.ac_online:
-                parts.append(f"Charging {r.battery_w:.1f} W")
+                parts = [f"Charging {r.battery_w:.1f} W"]
             else:
-                parts.append(f"Discharge {r.battery_w:.1f} W")
+                parts = [f"Discharge {r.battery_w:.1f} W"]
+        else:
+            parts = []
         if r.ac_online:
             parts.append("on AC")
         else:
@@ -670,33 +667,29 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.charge_row.set_subtitle("—")
 
-        # Runtime row: keep last subtitle if we cannot compute a fresh
-        # value this tick. The helper only runs every 4th tick; on
-        # non-helper ticks the previous reading is still the best
-        # information we have.
-        cur_runtime = self.runtime_row.get_subtitle() or ""
-        new_runtime = None
-        if r.bat_time and r.bat_time.strip():
-            new_runtime = r.bat_time.strip()
-        elif r.charge_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
-            minutes = r.charge_wh / r.battery_w * 60.0
-            new_runtime = self._fmt_duration(minutes)
-        elif r.charge_pct and r.charge_full_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
-            now_wh = r.charge_pct / 100.0 * r.charge_full_wh
-            minutes = now_wh / r.battery_w * 60.0
-            new_runtime = self._fmt_duration(minutes)
-        elif r.ac_online:
-            # AC mode: upower may report 'time to full' as bat_time;
-            # that is what the user wants to see (charging progress).
-            # On non-helper ticks, keep the last reading.
-            if cur_runtime and cur_runtime != "∞ (charging / on AC)":
-                # The previous reading was informative (time-to-full) —
-                # keep showing it.
-                pass
-            else:
-                new_runtime = "∞ (charging / on AC)"
-        if new_runtime is not None:
-            self.runtime_row.set_subtitle(new_runtime)
+        # Runtime row: helper is the only reliable source of battery
+        # Wh on systems that expose charge_* (µAh) instead of
+        # energy_* (µWh). sysfs-only math is off by 1000x and gives
+        # nonsense like '4 min' for a healthy 60 min battery. So:
+        # only update the runtime row on a tick where the helper ran
+        # and provided a value; otherwise keep the last reading.
+        if r.helper_ran:
+            cur_runtime = self.runtime_row.get_subtitle() or ""
+            new_runtime = None
+            if r.bat_time and r.bat_time.strip():
+                new_runtime = r.bat_time.strip()
+            elif r.charge_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
+                minutes = r.charge_wh / r.battery_w * 60.0
+                new_runtime = self._fmt_duration(minutes)
+            elif r.charge_pct and r.charge_full_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
+                now_wh = r.charge_pct / 100.0 * r.charge_full_wh
+                minutes = now_wh / r.battery_w * 60.0
+                new_runtime = self._fmt_duration(minutes)
+            elif r.ac_online:
+                if not cur_runtime or cur_runtime == "—":
+                    new_runtime = "∞ (charging / on AC)"
+            if new_runtime is not None:
+                self.runtime_row.set_subtitle(new_runtime)
 
         self.profile_row.set_subtitle(r.profile)
 
