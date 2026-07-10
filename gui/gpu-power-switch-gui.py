@@ -413,19 +413,18 @@ class Poller(GObject.Object):
                 if full_wh is None: full_wh = _full
 
             cpu_w = None
-            if use_helper and helper.get("rapl_w"):
-                # helper emits one or more comma-separated values (multi-package)
-                vals = [v for v in helper["rapl_w"].split(",") if v]
-                try:
-                    cpu_w = sum(float(v) for v in vals)
-                except ValueError:
-                    cpu_w = None
-            if cpu_w is None and helper.get("rapl_w") is not None:
-                # helper ran but reported empty RAPL → we already know
-                # the answer; do not waste 250 ms on read_rapl_w()
-                pass
-            elif cpu_w is None:
-                cpu_w = read_rapl_w()
+            if use_helper:
+                # Helper ran this tick — RAPL is its exclusive source.
+                # Reading energy_uj ourselves never works (root-only
+                # sysfs), so we either take the helper value or accept
+                # None for this tick.
+                rapl_str = helper.get("rapl_w", "") or ""
+                if rapl_str:
+                    vals = [v for v in rapl_str.split(",") if v]
+                    try:
+                        cpu_w = sum(float(v) for v in vals)
+                    except ValueError:
+                        cpu_w = None
 
             gpu_w = read_nvidia_power()
             gpu_control = "unknown"
@@ -619,12 +618,19 @@ class MainWindow(Adw.ApplicationWindow):
         self.power_row.set_title("System")
         self.power_row.set_subtitle(" · ".join(parts) if parts else "—")
 
-        self.cpu_row.set_subtitle(f"{r.cpu_w:.1f} W" if r.cpu_w is not None else "n/a (no RAPL)")
-        self.gpu_power_row.set_subtitle(
-            f"{r.gpu_w:.1f} W" if r.gpu_w is not None
-            else "n/a (no nvidia-smi)" if not r.gpu_present
-            else "—"
+        self.cpu_row.set_subtitle(
+            f"{r.cpu_w:.1f} W" if r.cpu_w is not None
+            else (self.cpu_row.get_subtitle() or "n/a (no RAPL)")
         )
+        if r.gpu_w is not None:
+            self.gpu_power_row.set_subtitle(f"{r.gpu_w:.1f} W")
+        else:
+            # Keep last value if we have one; otherwise show n/a.
+            cur = self.gpu_power_row.get_subtitle() or ""
+            if "—" in cur or "n/a" in cur:
+                self.gpu_power_row.set_subtitle(
+                    "n/a (no nvidia-smi)" if not r.gpu_present else "—"
+                )
 
         # Battery
         if r.charge_pct is not None:
