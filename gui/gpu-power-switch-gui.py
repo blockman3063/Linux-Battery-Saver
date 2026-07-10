@@ -725,7 +725,11 @@ class MainWindow(Adw.ApplicationWindow):
             cur_runtime = self.runtime_row.get_subtitle() or ""
             new_runtime = None
             if r.bat_time and r.bat_time.strip():
-                new_runtime = r.bat_time.strip()
+                mins = self._parse_bat_time(r.bat_time)
+                if mins is not None:
+                    new_runtime = self._fmt_duration(mins)
+                else:
+                    new_runtime = r.bat_time.strip()
             elif r.charge_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
                 minutes = r.charge_wh / r.battery_w * 60.0
                 new_runtime = self._fmt_duration(minutes)
@@ -843,13 +847,26 @@ class MainWindow(Adw.ApplicationWindow):
         return None
 
     @staticmethod
+    def _parse_bat_time(text: str) -> Optional[float]:
+        """Parse upower's bat_time string like '6.7 minutes' or '1.2 hours' into minutes float."""
+        import re
+        m = re.match(r'([\d.]+)\s*(minute|hour|minutes|hours)', text.strip())
+        if not m:
+            return None
+        val = float(m.group(1))
+        unit = m.group(2)
+        if unit.startswith('hour'):
+            val *= 60
+        return val
+
+    @staticmethod
     def _fmt_duration(minutes: float) -> str:
         if minutes < 0 or minutes > 60 * 24:
-            return "—"
-        h, m = divmod(int(minutes), 60)
-        if h == 0:
-            return f"{m} min"
-        return f"{h} h {m:02d} min"
+            return "\u2014"
+        total = int(minutes * 60)
+        h, r = divmod(total, 3600)
+        m, s = divmod(r, 60)
+        return f"{h:02d}:{m:02d}:{s:02d}"
 
     def _infer_profile(self) -> str:
         """Best-effort profile inference when powerprofilesctl is unavailable
