@@ -709,7 +709,7 @@ class MainWindow(Adw.ApplicationWindow):
         #   switch ON  → no lock, follow AC
         #   switch OFF → lock set, manual mode
         self.gpu_mode_switch.handler_block_by_func(self._on_mode_toggle)
-        self.gpu_mode_switch.set_state(not r.manual)
+        self.gpu_mode_switch.set_active(not r.manual)
         self.gpu_mode_switch.handler_unblock_by_func(self._on_mode_toggle)
         if r.manual:
             self.gpu_mode_row.set_subtitle(
@@ -749,9 +749,11 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Global switch (header) — temporarily block state-set so the
         # programmatic update does not call _on_global_toggle and write
-        # the file a second time.
+        # the file a second time. Also re-assert on every tick in case
+        # an external actor (udev, another GUI instance) changed the
+        # file under us.
         self.global_switch.handler_block_by_func(self._on_global_toggle)
-        self.global_switch.set_state(r.enabled)
+        self.global_switch.set_active(r.enabled)
         self.global_switch.handler_unblock_by_func(self._on_global_toggle)
 
     def _find_nvidia_pci_addr(self) -> Optional[str]:
@@ -813,14 +815,14 @@ class MainWindow(Adw.ApplicationWindow):
                 self._toast("Auto-switch re-enabled", True)
             else:
                 self._toast(f"Failed: {msg}", False)
-                self.gpu_mode_switch.set_state(False)
+                self.gpu_mode_switch.set_active(False)
         else:
-            ok, msg = gpu_set_manual_lock(True)    # lock
+            ok, msg = gpu_set_manual_lock(True)
             if ok:
                 self._toast("Manual mode — dGPU locked to your choice", True)
             else:
                 self._toast(f"Failed: {msg}", False)
-                self.gpu_mode_switch.set_state(True)
+                self.gpu_mode_switch.set_active(True)
         return False
 
     def _on_global_toggle(self, _src, state: bool) -> bool:
@@ -829,8 +831,7 @@ class MainWindow(Adw.ApplicationWindow):
                     "Auto-switch DISABLED" if ok else
                     f"Failed: {msg}", ok)
         if not ok:
-            # revert the switch
-            self.global_switch.set_state(not state)
+            self.global_switch.set_active(not state)
         return False
 
     def _toast(self, text: str, success: bool) -> None:
