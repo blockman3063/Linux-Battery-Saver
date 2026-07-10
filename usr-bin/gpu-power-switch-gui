@@ -1,13 +1,14 @@
 #!/bin/bash
-# gpu-power-switch-gui — crash-proof launcher with logging
+# gpu-power-switch-gui — crash-proof launcher
 MAX_RESTARTS=10
 RESTART_DELAY=1
 COUNT=0
 LOG="/tmp/gpa-launcher.log"
 echo "[$(date +%H:%M:%S)] launcher started" >> "$LOG"
+PYTHON="/usr/bin/python3"
 while [ $COUNT -lt $MAX_RESTARTS ]; do
     COUNT=$((COUNT + 1))
-    /usr/bin/env python3 /usr/lib/gpu-power-switch/gui/gpu-power-switch-gui.py "$@" >> "$LOG" 2>&1
+    $PYTHON /usr/lib/gpu-power-switch/gui/gpu-power-switch-gui.py "$@" >> "$LOG" 2>&1
     RC=$?
     echo "[$(date +%H:%M:%S)] exit code=$RC (count=$COUNT)" >> "$LOG"
     if [ $RC -eq 0 ]; then
