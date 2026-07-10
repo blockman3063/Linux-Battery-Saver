@@ -1,0 +1,33 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build tarball
+        run: |
+          set -eu
+          VER="${GITHUB_REF_NAME#v}"
+          [ -z "$VER" ] && VER="$(git rev-parse --short HEAD)"
+          D="gpu-power-switch-$VER"
+          mkdir -p "dist/$D"
+          for dir in usr-lib usr-bin gui desktop udev systemd polkit modprobe.d; do
+            [ -d "$dir" ] && cp -r "$dir" "dist/$D/"
+          done
+          cp install.sh uninstall.sh Makefile LICENSE README.md "dist/$D/"
+          cd dist
+          tar czf "$D.tar.gz" "$D"
+          ls -lh *.tar.gz
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          generate_release_notes: true
