@@ -161,6 +161,8 @@ set_cpu_perf() {
         *) return 0 ;;
     esac
     local pstate_dir="/sys/devices/system/cpu/intel_pstate"
+    local governer="powersave"
+    [ "$target" = "performance" ] && governer="performance"
     [ -d "$pstate_dir" ] || { info "intel_pstate not available, skipping CPU perf"; return 0; }
     [ "$(cat "$pstate_dir/status" 2>/dev/null)" = "active" ] || {
         info "intel_pstate driver not active, skipping CPU perf"; return 0;
@@ -174,6 +176,20 @@ set_cpu_perf() {
             info "intel_pstate no_turbo -> $no_turbo"
         else
             warn "no_turbo write failed: $(cat /tmp/gpu-power-switch.err)"
+        fi
+    fi
+    # Also flip the cpufreq scaling governor. With intel_pstate in
+    # active mode, "powersave" = conservative freq, "performance" = aggressive freq.
+    local gov_path="/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+    if [ -w "$gov_path" ]; then
+        local cur_gov
+        cur_gov="$(cat "$gov_path" 2>/dev/null || echo ?)"
+        if [ "$cur_gov" = "$governer" ]; then
+            info "cpufreq governor already $cur_gov"
+        elif printf '%s' "$governer" > "$gov_path" 2>/dev/null; then
+            info "cpufreq governor -> $governer"
+        else
+            warn "cpufreq governor write failed"
         fi
     fi
     if [ -w "$pstate_dir/max_perf_pct" ]; then
