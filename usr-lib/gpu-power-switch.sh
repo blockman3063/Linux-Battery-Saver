@@ -349,6 +349,13 @@ load_nvidia_driver() {
         info "nvidia driver already loaded"
         return 0
     fi
+    # If the PCI device was previously removed (D3cold), rescan
+    # the parent bridge to bring it back first.
+    if [ ! -d /sys/bus/pci/devices/0000:01:00.0 ]; then
+        info "PCI device absent, rescanning bridge"
+        echo 1 > /sys/bus/pci/devices/0000:00:01.0/rescan 2>/dev/null || true
+        sleep 2
+    fi
     if [ -f "$NVIDIA_KO" ]; then
         info "loading nvidia driver via insmod"
         insmod "$NVIDIA_KO" NVreg_DynamicPowerManagement=0x02 2>/tmp/gpu-power-switch.err
@@ -370,32 +377,33 @@ load_nvidia_driver() {
 
 unload_nvidia_driver() {
     if ! lsmod | grep -q '^nvidia '; then
-        info "nvidia driver not loaded, nothing to unload"
+        # Even without nvidia driver, the PCI device may still be
+        # powered. Try to remove it from PCI bus for true D3cold.
+        if [ -e /sys/bus/pci/devices/0000:01:00.0/remove ]; then
+            info "nvidia driver not loaded, removing PCI device"
+            # Also remove the audio function paired with the GPU
+            echo 1 > /sys/bus/pci/devices/0000:01:00.1/remove 2>/dev/null || true
+            echo 1 > /sys/bus/pci/devices/0000:01:00.0/remove 2>/dev/null || true
+        fi
         return 0
     fi
     info "unloading nvidia driver"
-    # Force-kill every process holding /dev/nvidia* open.
-    # The GUI's poller spawns nvidia-smi every 1.5 s, which opens
-    # the device — we need two rounds (TERM then KILL) to be sure.
     fuser -k /dev/nvidia* 2>/dev/null || true
     sleep 1
     fuser -k -KILL /dev/nvidia* 2>/dev/null || true
     sleep 0.5
-    # Before rmmod nvidia, also check if nvidia-uvm (CUDA) is
-    # still around and unload it.
     modprobe -r nvidia-uvm 2>/dev/null || true
     if rmmod nvidia 2>/tmp/gpu-power-switch.err; then
         info "nvidia driver unloaded"
     else
-        # One more try after another round of kills
         fuser -k -KILL /dev/nvidia* 2>/dev/null || true
         sleep 1
-        if rmmod nvidia 2>/tmp/gpu-power-switch.err; then
-            info "nvidia driver unloaded"
-        else
-            err "rmmod nvidia failed: $(cat /tmp/gpu-power-switch.err)"
-        fi
+        rmmod nvidia 2>/tmp/gpu-power-switch.err || true
     fi
+    # After unloading the driver, remove the PCI device for true
+    # power-off (D3cold). This drops GPU power to 0 W.
+    [ -e /sys/bus/pci/devices/0000:01:00.1/remove ] &&         echo 1 > /sys/bus/pci/devices/0000:01:00.1/remove 2>/dev/null || true
+    [ -e /sys/bus/pci/devices/0000:01:00.0/remove ] &&         echo 1 > /sys/bus/pci/devices/0000:01:00.0/remove 2>/dev/null || true
     NVIDIA_OK=0
     NVIDIA_PCI=""
     rm -f /tmp/gpu-power-switch.err
