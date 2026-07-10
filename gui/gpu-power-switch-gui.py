@@ -59,7 +59,7 @@ class PowerReading:
     cpu_w: Optional[float]       # package RAPL power in W
     gpu_w: Optional[float]       # NVIDIA dGPU power in W
     charge_pct: Optional[float]
-    charge_wh: Optional[float]   # remaining energy
+    charge_wh: Optional[float]   # remaining energy (Wh)
     charge_full_wh: Optional[float]
     ac_online: bool
     gpu_control: str             # "on" | "auto" | "unknown"
@@ -67,6 +67,7 @@ class PowerReading:
     profile: str                 # "performance" | "balanced" | "power-saver" | "unknown"
     enabled: bool
     manual: bool
+    bat_time: str                # upower's "time to empty" / "time to full"
     timestamp: float
 
 
@@ -365,36 +366,51 @@ class Poller(GObject.Object):
         # polls use helper only every 4th tick to avoid the 0.25 s sleep
         # on every refresh.
         cycle = 0
+        # Optional debug log; set GPU_PSWITCH_DEBUG=1 to enable.
+        import os
+        self._debug = bool(os.environ.get("GPU_PSWITCH_DEBUG"))
         while not self._stop.is_set():
             cycle += 1
             use_helper = (cycle == 1) or (cycle % 4 == 0)
             helper = read_status_via_helper() if use_helper else {}
+            if self._debug:
+                with open("/tmp/gpa-debug.log", "a") as f:
+                    f.write(f"[tick {cycle} helper={use_helper}] {helper}\n")
 
             bat_w = None
             pct = None
             now_wh = None
             full_wh = None
-            if use_helper and helper.get("bat_w"):
-                try:
-                    bat_w = float(helper["bat_w"])
-                except ValueError:
-                    bat_w = None
+            cpu_w = None
+            gpu_w = None
+            ac = read_ac_online()
+            enabled = (helper.get("enabled", "").lower() == "true") if use_helper else read_enabled()
+            manual = (helper.get("manual", "").lower() == "true") if use_helper else Path(
+                "/var/lib/gpu-power-switch/manual.lock"
+            ).exists()
+            # Battery fields (when helper ran)
+            bat_time = ""
+            if use_helper:
+                if helper.get("bat_w"):
+                    try: bat_w = float(helper["bat_w"])
+                    except ValueError: pass
                 if helper.get("bat_pct"):
-                    try:
-                        pct = float(helper["bat_pct"])
-                    except ValueError:
-                        pct = None
-            if bat_w is None or pct is None:
-                # fall back / merge with sysfs
+                    try: pct = float(helper["bat_pct"])
+                    except ValueError: pass
+                if helper.get("bat_energy_wh"):
+                    try: now_wh = float(helper["bat_energy_wh"])
+                    except ValueError: pass
+                if helper.get("bat_energy_full_wh"):
+                    try: full_wh = float(helper["bat_energy_full_wh"])
+                    except ValueError: pass
+                bat_time = helper.get("bat_time", "") or ""
+            # sysfs fallback for capacity (helper may not run, or upower missing)
+            if pct is None:
                 _bw, _pct, _now, _full = read_battery()
-                if bat_w is None:
-                    bat_w = _bw
-                if pct is None:
-                    pct = _pct
-                if now_wh is None:
-                    now_wh = _now
-                if full_wh is None:
-                    full_wh = _full
+                if bat_w is None: bat_w = _bw
+                if pct is None: pct = _pct
+                if now_wh is None: now_wh = _now
+                if full_wh is None: full_wh = _full
 
             cpu_w = None
             if use_helper and helper.get("rapl_w"):
@@ -404,11 +420,6 @@ class Poller(GObject.Object):
                     cpu_w = sum(float(v) for v in vals)
                 except ValueError:
                     cpu_w = None
-            # If helper ran without root (no RAPL data) AND we cannot
-            # read it ourselves either, leave cpu_w as None — the UI
-            # shows "n/a (no RAPL)". The poller will retry pkexec on
-            # subsequent ticks; once the polkit agent is registered it
-            # will succeed and the row will fill in.
             if cpu_w is None and helper.get("rapl_w") is not None:
                 # helper ran but reported empty RAPL → we already know
                 # the answer; do not waste 250 ms on read_rapl_w()
@@ -417,11 +428,6 @@ class Poller(GObject.Object):
                 cpu_w = read_rapl_w()
 
             gpu_w = read_nvidia_power()
-            ac = read_ac_online()
-            enabled = (helper.get("enabled", "").lower() == "true") if use_helper else read_enabled()
-            manual = (helper.get("manual", "").lower() == "true") if use_helper else Path(
-                "/var/lib/gpu-power-switch/manual.lock"
-            ).exists()
             gpu_control = "unknown"
             gpu_present = False
             for d in Path("/sys/bus/pci/devices").iterdir():
@@ -461,6 +467,7 @@ class Poller(GObject.Object):
                 profile=profile,
                 enabled=enabled,
                 manual=manual,
+                bat_time=bat_time,
                 timestamp=time.time(),
             )
             GLib.idle_add(lambda r=reading: self.emit("reading", r) or False)
@@ -627,8 +634,16 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.charge_row.set_subtitle("—")
 
-        if r.charge_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
+        if r.bat_time and r.bat_time.strip():
+            # UPower already computed a human-readable time-to-empty / time-to-full
+            self.runtime_row.set_subtitle(r.bat_time.strip())
+        elif r.charge_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
             minutes = r.charge_wh / r.battery_w * 60.0
+            self.runtime_row.set_subtitle(self._fmt_duration(minutes))
+        elif r.charge_pct and r.charge_full_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
+            # pct + full_wh gives now_wh; recompute
+            now_wh = r.charge_pct / 100.0 * r.charge_full_wh
+            minutes = now_wh / r.battery_w * 60.0
             self.runtime_row.set_subtitle(self._fmt_duration(minutes))
         elif r.ac_online:
             self.runtime_row.set_subtitle("∞ (charging / on AC)")
@@ -659,13 +674,15 @@ class MainWindow(Adw.ApplicationWindow):
             self.gpu_mode_row.set_subtitle(
                 "Following AC state automatically"
             )
-        # Buttons only meaningful in Manual mode
-        in_manual = r.manual
+        # Buttons are always sensitive when the dGPU is present.
+        # Pressing either one takes the user out of auto-mode (sets the
+        # lock) and applies the requested state. To return to auto,
+        # flip the switch above back on.
         self.btn_gpu_on.set_sensitive(
-            in_manual and r.gpu_present and r.gpu_control != "on"
+            r.gpu_present and r.gpu_control != "on"
         )
         self.btn_gpu_off.set_sensitive(
-            in_manual and r.gpu_present and r.gpu_control != "auto"
+            r.gpu_present and r.gpu_control != "auto"
         )
 
         # Global switch (header)

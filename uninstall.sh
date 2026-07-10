@@ -47,7 +47,7 @@ rmdir "$INSTALL_LIB" 2>/dev/null || true
 log "Removing polkit policy + .desktop entry"
 rm -f "$INSTALL_POLKIT/org.linuxbatterysaver.policy"
 rm -f "$INSTALL_APPS/linux-battery-saver.desktop"
-# User-level autostart (created by you or by make install)
+# User-level autostart (created by install.sh or by you manually)
 rm -f "$HOME/.config/autostart/linux-battery-saver.desktop"
 
 log "Removing NVIDIA runtime-PM modprobe config"

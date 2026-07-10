@@ -96,6 +96,26 @@ log "Refreshing desktop + icon caches"
 update-desktop-database "$INSTALL_APPS" 2>/dev/null || true
 gtk-update-icon-cache -f "$PREFIX/share/icons/hicolor" 2>/dev/null || true
 
+# If the user invoking the script has a writable autostart directory,
+# drop the .desktop there so the GUI launches on login. We do not
+# create the autostart directory if it does not exist (some users
+# run a minimal window manager without XDG autostart support).
+if [ -n "${HOME:-}" ] && [ -d "$HOME" ] && [ -w "$HOME" ]; then
+    if [ ! -d "$HOME/.config" ]; then
+        mkdir -p "$HOME/.config" 2>/dev/null || true
+    fi
+    if [ -d "$HOME/.config" ] && [ -w "$HOME/.config" ]; then
+        if [ ! -d "$HOME/.config/autostart" ]; then
+            mkdir -p "$HOME/.config/autostart" 2>/dev/null || true
+        fi
+        if [ -d "$HOME/.config/autostart" ] && [ -w "$HOME/.config/autostart" ]; then
+            install -m 644 desktop/linux-battery-saver.desktop \
+                "$HOME/.config/autostart/linux-battery-saver.desktop"
+            log "Autostart entry installed: $HOME/.config/autostart/linux-battery-saver.desktop"
+        fi
+    fi
+fi
+
 log "Done."
 echo
 echo "Try the GUI:"

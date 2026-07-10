@@ -200,6 +200,10 @@ if [ "$SUBCMD" = "status" ]; then
     RAPL_W=""
     BAT_W=""
     BAT_PCT=""
+    BAT_ENERGY_WH=""
+    BAT_ENERGY_FULL_WH=""
+    BAT_VOLTAGE=""
+    BAT_TIME=""
     # RAPL package power — best-effort; if not readable, we just leave
     # the value empty so the GUI can show "n/a" instead of erroring.
     for d in /sys/class/powercap/intel-rapl*; do
@@ -217,16 +221,41 @@ if [ "$SUBCMD" = "status" ]; then
         w=$(awk -v a="$a" -v b="$b" 'BEGIN{printf "%.2f",(b-a)/1e6/0.25}')
         RAPL_W="${RAPL_W:+$RAPL_W,}$w"
     done
-    # Battery — best-effort too
+    # Battery — prefer UPower (it normalizes Wh / voltage from whatever
+    # the kernel driver exposes) and fall back to sysfs.
+    if command -v upower >/dev/null 2>&1; then
+        up_out="$(upower -i /org/freedesktop/UPower/devices/battery_BAT0 2>/dev/null || true)"
+        for k in 'energy:' 'energy-rate:' 'energy-full:' 'voltage:' 'time to empty:' 'time to full:'; do
+            v="$(printf '%s\n' "$up_out" | awk -F': *' -v key="$k" '$1 == key { print $2; exit }')"
+            case "$k" in
+                'energy:')          [ -n "$v" ] && BAT_ENERGY_WH="${v% Wh}" ;;
+                'energy-full:')     [ -n "$v" ] && BAT_ENERGY_FULL_WH="${v% Wh}" ;;
+                'energy-rate:')     [ -n "$v" ] && BAT_W="${v% W}" ;;
+                'voltage:')         [ -n "$v" ] && BAT_VOLTAGE="${v% V}" ;;
+                'time to empty:')   [ -n "$v" ] && BAT_TIME="$v" ;;
+                'time to full:')    [ -n "$v" ] && [ -z "$BAT_TIME" ] && BAT_TIME="$v" ;;
+            esac
+        done
+    fi
+    # sysfs fallback for fields UPower may not show
     for b in /sys/class/power_supply/BAT*; do
         [ -d "$b" ] || continue
-        if [ -r "$b/power_now" ]; then
-            pw=$(cat "$b/power_now" 2>/dev/null)
-            [ -n "$pw" ] && BAT_W="$(awk -v x="$pw" 'BEGIN{printf "%.2f",x/1e6}')"
-        fi
         if [ -r "$b/capacity" ]; then
             cp=$(cat "$b/capacity" 2>/dev/null)
             [ -n "$cp" ] && BAT_PCT="$cp"
+        fi
+        # charge-based batteries (µAh) + design voltage → Wh estimate
+        # Wh = Ah × V. µAh / 1e6 = Ah. µV / 1e6 = V. Wh = c*v/1e12.
+        if [ -z "$BAT_ENERGY_WH" ] && [ -r "$b/charge_now" ] && [ -r "$b/charge_full_design" ]; then
+            cn=$(cat "$b/charge_now" 2>/dev/null)
+            cf=$(cat "$b/charge_full_design" 2>/dev/null)
+            vd=$(cat "$b/voltage_min_design" 2>/dev/null)
+            if [ -n "$cn" ] && [ -n "$cf" ] && [ -n "$vd" ] && [ "$cf" -gt 0 ]; then
+                now_wh=$(awk -v c="$cn" -v v="$vd" 'BEGIN{printf "%.2f", c*v/1e12}')
+                full_wh=$(awk -v c="$cf" -v v="$vd" 'BEGIN{printf "%.2f", c*v/1e12}')
+                [ -z "$BAT_ENERGY_WH" ] && BAT_ENERGY_WH="$now_wh"
+                [ -z "$BAT_ENERGY_FULL_WH" ] && BAT_ENERGY_FULL_WH="$full_wh"
+            fi
         fi
         break
     done
@@ -242,6 +271,10 @@ nvidia_pci=$NVIDIA_PCI
 rapl_w=$RAPL_W
 bat_w=$BAT_W
 bat_pct=$BAT_PCT
+bat_energy_wh=$BAT_ENERGY_WH
+bat_energy_full_wh=$BAT_ENERGY_FULL_WH
+bat_voltage=$BAT_VOLTAGE
+bat_time=$BAT_TIME
 cpu_no_turbo=$([ -r /sys/devices/system/cpu/intel_pstate/no_turbo ] && cat /sys/devices/system/cpu/intel_pstate/no_turbo || echo n/a)
 cpu_max_perf_pct=$([ -r /sys/devices/system/cpu/intel_pstate/max_perf_pct ] && cat /sys/devices/system/cpu/intel_pstate/max_perf_pct || echo n/a)
 EOF
