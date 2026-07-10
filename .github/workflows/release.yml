@@ -41,7 +41,6 @@ jobs:
           printf '#!/bin/sh\nset -e\ncase "$1" in\n  configure)\n    udevadm control --reload-rules 2>/dev/null || true\n    udevadm trigger --subsystem-match=power_supply --action=change 2>/dev/null || true\n    systemctl daemon-reload 2>/dev/null || true\n    ;;\nesac\n' > "$D/DEBIAN/postinst"
           chmod 755 "$D/DEBIAN/postinst"
           dpkg-deb --build "$D"
-          mv "$D.deb" "gpu-power-switch-$VER.deb"
 
           # ---- .rpm ----
           mkdir -p rpmbuild/{SPECS,SOURCES}
