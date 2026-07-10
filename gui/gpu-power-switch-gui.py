@@ -644,20 +644,14 @@ class MainWindow(Adw.ApplicationWindow):
         # direction (charging vs discharging) is given by ac_online +
         # the kernel's "status" sysfs.
         if r.ac_online:
-            # Smoothed estimate = CPU + GPU + 8W overhead.
-            # Only updates on helper ticks (every 4th poll).
-            est = 8.0
-            have = False
-            if r.cpu_w is not None:
-                est += r.cpu_w
-                have = True
-            if r.gpu_w is not None:
-                est += r.gpu_w
-                have = True
-            if have:
+            # Only updates on helper ticks when both CPU and GPU
+            # data are available. If one is missing (RAPL fail,
+            # nvidia-smi timed out), keep the previous subtitle
+            # instead of showing a partial estimate.
+            if r.cpu_w is not None and r.gpu_w is not None:
+                self.power_row.set_subtitle(f"~{r.cpu_w + r.gpu_w + 8:.1f} W · on AC")
                 self.power_row.set_title("System")
-                self.power_row.set_subtitle(f"~{est:.1f} W · on AC")
-            # else: keep last subtitle (non-helper tick)
+            # else: keep last subtitle
         elif r.battery_w is not None and r.battery_w > 0:
             parts = [f"Discharge {r.battery_w:.1f} W", "on battery"]
             self.power_row.set_title("System")
