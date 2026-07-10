@@ -557,9 +557,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.runtime_row.add_prefix(Gtk.Image.new_from_icon_name("alarm-symbolic"))
         self.profile_row = Adw.ActionRow(title="Power profile", subtitle="—")
         self.profile_row.add_prefix(Gtk.Image.new_from_icon_name("power-profile-balanced-symbolic"))
+        self.charge_power_row = Adw.ActionRow(title="Charge rate", subtitle="—")
+        self.charge_power_row.add_prefix(Gtk.Image.new_from_icon_name("battery-symbolic"))
+        self.health_row = Adw.ActionRow(title="Battery health", subtitle="—")
+        self.health_row.add_prefix(Gtk.Image.new_from_icon_name("battery-symbolic"))
         self.battery_group.add(self.charge_row)
         self.battery_group.add(self.runtime_row)
         self.battery_group.add(self.profile_row)
+        self.battery_group.add(self.charge_power_row)
+        self.battery_group.add(self.health_row)
         v.append(self.battery_group)
 
         # ── GPU control group ──
@@ -643,26 +649,22 @@ class MainWindow(Adw.ApplicationWindow):
         # upower always reports energy-rate as a positive number. The
         # direction (charging vs discharging) is given by ac_online +
         # the kernel's "status" sysfs.
-        if r.battery_w is not None and r.battery_w > 0:
-            if r.ac_online:
-                parts = [f"Charging {r.battery_w:.1f} W"]
-            else:
-                parts = [f"Discharge {r.battery_w:.1f} W"]
-        else:
-            parts = []
         if r.ac_online:
-            parts.append("on AC")
-        else:
-            parts.append("on battery")
-        if parts:
+            # On AC, battery charging rate is NOT system consumption.
+            # Show estimated total: CPU + GPU + platform overhead.
+            est = 8.0
+            if r.cpu_w: est += r.cpu_w
+            if r.gpu_w: est += r.gpu_w
+            self.power_row.set_title("System")
+            self.power_row.set_subtitle(f"~{est:.1f} W · on AC")
+        elif r.battery_w is not None and r.battery_w > 0:
+            parts = [f"Discharge {r.battery_w:.1f} W", "on battery"]
             self.power_row.set_title("System")
             self.power_row.set_subtitle(" · ".join(parts))
         else:
             cur = self.power_row.get_subtitle() or ""
             if cur == "—" or not cur:
-                self.power_row.set_subtitle(
-                    f"{'Charging' if r.ac_online else '—'} (no BAT power_now)"
-                )
+                self.power_row.set_subtitle("— (no battery data)")
 
         self.cpu_row.set_subtitle(
             f"{r.cpu_w:.1f} W" if r.cpu_w is not None
@@ -685,6 +687,27 @@ class MainWindow(Adw.ApplicationWindow):
             self.charge_row.set_subtitle(f"{r.charge_wh:.1f} / {r.charge_full_wh:.1f} Wh")
         else:
             self.charge_row.set_subtitle("—")
+        # Charging/discharge rate (moved from System row)
+        if r.battery_w is not None and r.battery_w > 0:
+            if r.ac_online:
+                self.charge_power_row.set_subtitle(f"Charging {r.battery_w:.1f} W")
+            else:
+                self.charge_power_row.set_subtitle(f"Discharge {r.battery_w:.1f} W")
+        else:
+            self.charge_power_row.set_subtitle("—")
+        # Battery health from acpi (design vs full capacity ratio)
+        try:
+            import subprocess as _sp2
+            acpi_out = _sp2.run(
+                ["acpi", "-i"], capture_output=True, text=True, timeout=3, check=False,
+            ).stdout
+            for line in acpi_out.splitlines():
+                if "last full capacity" in line:
+                    pct = line.split("=")[-1].strip().rstrip("%")
+                    self.health_row.set_subtitle(f"Health: {pct}%")
+                    break
+        except (OSError, subprocess.SubprocessError):
+            self.health_row.set_subtitle("—")
 
         # Runtime row: helper is the only reliable source of battery
         # Wh on systems that expose charge_* (µAh) instead of
