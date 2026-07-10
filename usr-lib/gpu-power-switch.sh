@@ -408,13 +408,13 @@ unload_nvidia_driver() {
     sleep 1
     fuser -k -KILL /dev/nvidia* 2>/dev/null || true
     sleep 0.5
-    modprobe -r nvidia-uvm 2>/dev/null || true
-    if rmmod nvidia 2>/tmp/gpu-power-switch.err; then
+    timeout 5 modprobe -r nvidia-uvm 2>/dev/null || warn "nvidia-uvm unload timed out, skipping"
+    if timeout 5 rmmod nvidia 2>/tmp/gpu-power-switch.err; then
         info "nvidia driver unloaded"
     else
         fuser -k -KILL /dev/nvidia* 2>/dev/null || true
         sleep 1
-        rmmod nvidia 2>/tmp/gpu-power-switch.err || true
+        timeout 5 rmmod nvidia 2>/tmp/gpu-power-switch.err ||             warn "rmmod nvidia timed out, GPU may stay powered"
     fi
     # After unloading the driver, remove the PCI device for true
     # power-off (D3cold). This drops GPU power to 0 W.
