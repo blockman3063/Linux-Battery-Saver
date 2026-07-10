@@ -225,15 +225,21 @@ if [ "$SUBCMD" = "status" ]; then
     # the kernel driver exposes) and fall back to sysfs.
     if command -v upower >/dev/null 2>&1; then
         up_out="$(upower -i /org/freedesktop/UPower/devices/battery_BAT0 2>/dev/null || true)"
-        for k in 'energy:' 'energy-rate:' 'energy-full:' 'voltage:' 'time to empty:' 'time to full:'; do
-            v="$(printf '%s\n' "$up_out" | awk -F': *' -v key="$k" '$1 == key { print $2; exit }')"
+        # Strip leading whitespace from each line so awk field-1
+        # comparisons work despite upower's indented output.
+        up_clean="$(printf '%s\n' "$up_out" | sed 's/^[[:space:]]*//')"
+        # upower output is "key:    value unit", so the first ':'
+        # is the field separator. Compare against the key with the
+        # trailing ':' stripped (awk's -F eats the separator).
+        for k in 'energy' 'energy-rate' 'energy-full' 'voltage' 'time to empty' 'time to full'; do
+            v="$(printf '%s\n' "$up_clean" | awk -F': *' -v key="$k" '$1 == key { print $2; exit }')"
             case "$k" in
-                'energy:')          [ -n "$v" ] && BAT_ENERGY_WH="${v% Wh}" ;;
-                'energy-full:')     [ -n "$v" ] && BAT_ENERGY_FULL_WH="${v% Wh}" ;;
-                'energy-rate:')     [ -n "$v" ] && BAT_W="${v% W}" ;;
-                'voltage:')         [ -n "$v" ] && BAT_VOLTAGE="${v% V}" ;;
-                'time to empty:')   [ -n "$v" ] && BAT_TIME="$v" ;;
-                'time to full:')    [ -n "$v" ] && [ -z "$BAT_TIME" ] && BAT_TIME="$v" ;;
+                energy)          [ -n "$v" ] && BAT_ENERGY_WH="${v% Wh}" ;;
+                energy-full)     [ -n "$v" ] && BAT_ENERGY_FULL_WH="${v% Wh}" ;;
+                energy-rate)     [ -n "$v" ] && BAT_W="${v% W}" ;;
+                voltage)         [ -n "$v" ] && BAT_VOLTAGE="${v% V}" ;;
+                'time to empty') [ -n "$v" ] && BAT_TIME="$v" ;;
+                'time to full')  [ -n "$v" ] && [ -z "$BAT_TIME" ] && BAT_TIME="$v" ;;
             esac
         done
     fi

@@ -615,8 +615,29 @@ class MainWindow(Adw.ApplicationWindow):
             parts.append("on AC")
         else:
             parts.append("on battery")
-        self.power_row.set_title("System")
-        self.power_row.set_subtitle(" · ".join(parts) if parts else "—")
+        # Power row — keep last subtitle if we have no battery data
+        # this tick (e.g. on battery-based systems with no power_now).
+        # upower always reports energy-rate as a positive number. The
+        # direction (charging vs discharging) is given by ac_online +
+        # the kernel's "status" sysfs.
+        if r.battery_w is not None and r.battery_w > 0:
+            if r.ac_online:
+                parts.append(f"Charging {r.battery_w:.1f} W")
+            else:
+                parts.append(f"Discharge {r.battery_w:.1f} W")
+        if r.ac_online:
+            parts.append("on AC")
+        else:
+            parts.append("on battery")
+        if parts:
+            self.power_row.set_title("System")
+            self.power_row.set_subtitle(" · ".join(parts))
+        else:
+            cur = self.power_row.get_subtitle() or ""
+            if cur == "—" or not cur:
+                self.power_row.set_subtitle(
+                    f"{'Charging' if r.ac_online else '—'} (no BAT power_now)"
+                )
 
         self.cpu_row.set_subtitle(
             f"{r.cpu_w:.1f} W" if r.cpu_w is not None
