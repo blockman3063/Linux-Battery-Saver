@@ -45,7 +45,7 @@ is_enabled() {
 
 # ---------- detect NVIDIA dGPU PCI address ----------
 detect_nvidia_pci() {
-    local dev vendor class
+    local dev vendor class driver drvname
     for dev in /sys/bus/pci/devices/*; do
         [ -d "$dev" ] || continue
         vendor="$(cat "$dev/vendor" 2>/dev/null || true)"
@@ -58,7 +58,10 @@ detect_nvidia_pci() {
             0x03000*|0x03020*) ;;
             *) continue ;;
         esac
-        if [ -w "$dev/power/control" ] || [ -f "$dev/power/control" ]; then
+        driver="$(readlink "$dev/driver" 2>/dev/null || true)"
+        drvname="$(basename "$driver" 2>/dev/null || true)"
+        [ "$drvname" = "nvidia" ] || continue
+        if [ -e "$dev/power/control" ]; then
             printf '%s\n' "$dev"
             return 0
         fi
