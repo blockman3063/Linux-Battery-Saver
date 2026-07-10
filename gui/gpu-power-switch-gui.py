@@ -597,7 +597,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.btn_gpu_on = Gtk.Button(label="Wake (on)", valign=Gtk.Align.CENTER,
                                      css_classes=("suggested-action",))
         self.btn_gpu_on.connect("clicked", lambda *_: self._do_action("gpu_on"))
-        self.btn_gpu_off = Gtk.Button(label="Suspend (auto)", valign=Gtk.Align.CENTER)
+        self.btn_gpu_off = Gtk.Button(label="Off (auto)", valign=Gtk.Align.CENTER)
         self.btn_gpu_off.connect("clicked", lambda *_: self._do_action("gpu_off"))
         box = Gtk.Box(spacing=6)
         box.append(self.btn_gpu_on)
@@ -720,7 +720,7 @@ class MainWindow(Adw.ApplicationWindow):
                 "Following AC state automatically"
             )
         # Buttons: highlight the *opposite* of the last manual choice,
-        # so a user who just picked "Suspend" sees a clear Wake button
+        # so a user who just picked "Off" sees a clear Wake button
         # inviting them to come back. The actual hardware state
         # (r.gpu_control) can be different if AC events have run since.
         # Default to 'auto' so a fresh install shows Wake (the typical
