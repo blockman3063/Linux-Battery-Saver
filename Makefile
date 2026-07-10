@@ -32,6 +32,7 @@ test:
 	@bash -n usr-lib/gpu-power-switch.sh           && echo "script syntax OK"
 	@bash -n usr-lib/gpu-power-switch-toggle       && echo "toggle syntax OK"
 	@bash -n usr-lib/gpu-power-switch-manual       && echo "manual syntax OK"
+	@bash -n usr-lib/gpu-power-switch-mode         && echo "mode syntax OK"
 	@bash -n install.sh                            && echo "install.sh syntax OK"
 	@bash -n uninstall.sh                          && echo "uninstall.sh syntax OK"
 	@python3 -c "import xml.etree.ElementTree as ET; ET.parse('polkit/org.linuxbatterysaver.policy')" && echo "policy XML OK"

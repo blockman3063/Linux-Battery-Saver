@@ -1,0 +1,50 @@
+#!/bin/bash
+# gpu-power-switch-mode — switch between Intel iGPU-only and On-Demand GPU modes
+# for NVIDIA Optimus laptops. Created by gpu-power-switch (Linux Battery Saver).
+#
+# Usage:
+#   gpu-power-switch-mode intel       — switch to iGPU-only, dGPU fully powers off
+#   gpu-power-switch-mode on-demand   — switch to on-demand, dGPU loads on demand
+#   gpu-power-switch-mode status      — show current prime-select mode + GPU state
+#
+# Switching mode requires updating initramfs and a reboot. This script
+# performs the switch and schedules a reboot with a 15-second countdown.
+# Cancel with Ctrl-C if needed.
+#
+set -eu
+
+SUBCMD="${1:-status}"
+LOG_TAG="gpu-power-switch-mode"
+log()  { logger -t "$LOG_TAG" "$*"; }
+
+case "$SUBCMD" in
+    intel)
+        log "switching to intel mode"
+        prime-select intel || true
+        echo "Intel mode selected. Rebooting in 15 seconds... (Ctrl-C to cancel)"
+        sleep 15
+        shutdown -r now
+        ;;
+    on-demand)
+        log "switching to on-demand mode"
+        prime-select on-demand || true
+        echo "On-demand mode selected. Rebooting in 15 seconds... (Ctrl-C to cancel)"
+        sleep 15
+        shutdown -r now
+        ;;
+    status)
+        MODE=$(prime-select query 2>/dev/null || echo unknown)
+        NVIDIA_LOADED=$(lsmod | grep -q '^nvidia ' && echo yes || echo no)
+        DRIVER_BOUND=$(readlink /sys/bus/pci/devices/0000:01:00.0/driver 2>/dev/null | grep -q nvidia && echo yes || echo no)
+        cat <<EOF
+prime_mode=$MODE
+nvidia_loaded=$NVIDIA_LOADED
+driver_bound=$DRIVER_BOUND
+EOF
+        ;;
+    *)
+        echo "usage: $0 intel|on-demand|status" >&2
+        exit 2
+        ;;
+esac
+exit 0

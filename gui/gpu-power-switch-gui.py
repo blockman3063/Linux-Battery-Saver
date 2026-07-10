@@ -440,6 +440,10 @@ class Poller(GObject.Object):
                     cls = (d / "class").read_text().strip()
                     if not (cls.startswith("0x03000") or cls.startswith("0x03020")):
                         continue
+                    # Also check the nvidia driver is actually bound
+                    drv = os.readlink(str(d / "driver")) if os.path.lexists(str(d / "driver")) else None
+                    if not drv or os.path.basename(drv) != "nvidia":
+                        continue
                     gpu_present = True
                     ctrl = d / "power/control"
                     if ctrl.exists():
@@ -605,6 +609,19 @@ class MainWindow(Adw.ApplicationWindow):
         self.gpu_action_row.add_suffix(box)
         self.gpu_group.add(self.gpu_action_row)
 
+        # GPU mode switch (intel ↔ on-demand)
+        self.gpu_mode_flag = False
+        self.gpu_mode_row = Adw.ActionRow(
+            title="GPU Power Mode",
+            subtitle="Check your current mode",
+        )
+        self.btn_gpu_mode = Gtk.Button(
+            label="Switch to on-demand", valign=Gtk.Align.CENTER,
+        )
+        self.btn_gpu_mode.connect("clicked", self._on_gpu_mode_click)
+        self.gpu_mode_row.add_suffix(self.btn_gpu_mode)
+        self.gpu_group.add(self.gpu_mode_row)
+
         v.append(self.gpu_group)
 
         # Footer
@@ -653,13 +670,12 @@ class MainWindow(Adw.ApplicationWindow):
         )
         if r.gpu_w is not None:
             self.gpu_power_row.set_subtitle(f"{r.gpu_w:.1f} W")
+        elif not r.gpu_present:
+            # Driver not loaded (prime-select intel, driver unloaded)
+            self.gpu_power_row.set_subtitle("Offline (driver unloaded)")
         else:
-            # Keep last value if we have one; otherwise show n/a.
-            cur = self.gpu_power_row.get_subtitle() or ""
-            if "—" in cur or "n/a" in cur:
-                self.gpu_power_row.set_subtitle(
-                    "n/a (no nvidia-smi)" if not r.gpu_present else "—"
-                )
+            # Driver loaded but nvidia-smi failed temporarily
+            self.gpu_power_row.set_subtitle("n/a (no nvidia-smi)")
 
         # Battery
         if r.charge_pct is not None:
@@ -746,6 +762,34 @@ class MainWindow(Adw.ApplicationWindow):
             else:
                 self.btn_gpu_off.add_css_class("suggested-action")
                 self.btn_gpu_on.remove_css_class("suggested-action")
+
+        # Update GPU mode row with current prime-select mode
+        try:
+            import subprocess as _sp
+            import shutil as _s2
+            ms = "/usr/lib/gpu-power-switch/gpu-power-switch-mode"
+            if _s2.which(ms):
+                r = _sp.run([ms, "status"], capture_output=True, text=True, timeout=3)
+                if r.returncode == 0:
+                    pm = ""
+                    for ln in r.stdout.splitlines():
+                        if ln.startswith("prime_mode="):
+                            pm = ln.split("=", 1)[1].strip()
+                            break
+                    if pm:
+                        nd = ""
+                        for ln in r.stdout.splitlines():
+                            if ln.startswith("nvidia_loaded="):
+                                nd = ln.split("=", 1)[1].strip()
+                                break
+                        self.gpu_mode_row.set_subtitle(
+                            f"Mode: {pm} | nvidia driver: {nd}"
+                        )
+                        self.btn_gpu_mode.set_label(
+                            "Switch to on-demand" if pm == "intel" else "Switch to intel"
+                        )
+        except OSError:
+            pass
 
         # Global switch (header) — temporarily block state-set so the
         # programmatic update does not call _on_global_toggle and write
@@ -854,6 +898,44 @@ class MainWindow(Adw.ApplicationWindow):
                 self._toast(f"Failed: {msg}", False)
                 self.gpu_mode_switch.set_active(True)
         return False
+
+    def _on_gpu_mode_click(self, _btn) -> None:
+        """Switch between prime-select intel and on-demand modes.
+        Requires a reboot to take effect."""
+        import subprocess, shutil as _shutil
+        mode_script = "/usr/lib/gpu-power-switch/gpu-power-switch-mode"
+        if not _shutil.which(mode_script):
+            self._toast("gpu-power-switch-mode not found", False)
+            return
+        new_mode = ""
+        try:
+            r = subprocess.run(
+                [mode_script, "status"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            for line in r.stdout.splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    if k == "prime_mode":
+                        new_mode = "on-demand" if v.strip() == "intel" else "intel"
+                        break
+        except (subprocess.SubprocessError, OSError):
+            self._toast("Failed to detect GPU mode", False)
+            return
+        if not new_mode:
+            self._toast("Unknown current GPU mode", False)
+            return
+        rc = subprocess.run(
+            ["pkexec", mode_script, new_mode],
+            capture_output=True, text=True, timeout=5,
+        ).returncode
+        if rc == 0:
+            self._toast(
+                f"Mode switched to {new_mode}. Reboot in 15 s (Ctrl-C to cancel).",
+                True,
+            )
+        else:
+            self._toast("Mode switch failed", False)
 
     def _on_global_toggle(self, _src, state: bool) -> bool:
         ok, msg = gpu_set_enabled(state)

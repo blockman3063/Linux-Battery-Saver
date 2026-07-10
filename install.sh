@@ -48,7 +48,7 @@ fi
 
 log "Installing CLI scripts to $INSTALL_LIB"
 install -d -m 755 "$INSTALL_LIB" "$INSTALL_LIB/gui"
-for f in gpu-power-switch.sh gpu-power-switch-toggle gpu-power-switch-manual; do
+for f in gpu-power-switch.sh gpu-power-switch-toggle gpu-power-switch-manual gpu-power-switch-mode; do
     install -m 755 "$SRC_LIB/$f" "$INSTALL_LIB/$f"
 done
 

@@ -41,6 +41,7 @@ rm -f "$INSTALL_LIB"/gpu-power-switch.sh
 rm -f "$INSTALL_LIB"/gpu-power-switch-toggle
 rm -f "$INSTALL_LIB"/gpu-power-switch-manual
 rm -f "$INSTALL_BIN"/gpu-power-switch-gui
+rm -f "$INSTALL_LIB"/gpu-power-switch-mode
 rm -rf "$INSTALL_LIB/gui"
 rmdir "$INSTALL_LIB" 2>/dev/null || true
 
