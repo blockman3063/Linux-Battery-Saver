@@ -337,19 +337,77 @@ else
     AC_ONLINE=1
 fi
 
-# Idempotency: skip the write if the GPU is already in the desired state.
-# This stops the systemd oneshot from doubling up on the udev trigger.
+# Driver load/unload: on prime-select intel, nvidia modules are
+# blacklisted and must be loaded via insmod. This allows the dGPU to
+# be completely powered off on battery and reactivated on AC without
+# a reboot.
+NVIDIA_BASE="/lib/modules/$(uname -r)/kernel/nvidia-595-open"
+NVIDIA_KO="$NVIDIA_BASE/nvidia.ko"
+
+load_nvidia_driver() {
+    if lsmod | grep -q '^nvidia '; then
+        info "nvidia driver already loaded"
+        return 0
+    fi
+    if [ -f "$NVIDIA_KO" ]; then
+        info "loading nvidia driver via insmod"
+        insmod "$NVIDIA_KO" NVreg_DynamicPowerManagement=0x02 2>/tmp/gpu-power-switch.err
+        modprobe nvidia-uvm 2>/dev/null || true
+    else
+        warn "nvidia.ko not found at $NVIDIA_KO"
+        return 1
+    fi
+    # Re-detect now that the driver is loaded
+    NVIDIA_PCI="$(detect_nvidia_pci || true)"
+    if [ -n "$NVIDIA_PCI" ]; then
+        NVIDIA_OK=1
+        info "NVIDIA dGPU now available: $NVIDIA_PCI"
+    else
+        NVIDIA_OK=0
+        warn "nvidia driver loaded but PCI device not found"
+    fi
+}
+
+unload_nvidia_driver() {
+    if ! lsmod | grep -q '^nvidia '; then
+        info "nvidia driver not loaded, nothing to unload"
+        return 0
+    fi
+    info "unloading nvidia driver"
+    # Kill userspace processes holding nvidia devices open
+    fuser -k /dev/nvidia* 2>/dev/null || true
+    sleep 0.5
+    modprobe -r nvidia-uvm 2>/dev/null || true
+    modprobe -r nvidia-drm 2>/dev/null || true
+    modprobe -r nvidia-modeset 2>/dev/null || true
+    if rmmod nvidia 2>/tmp/gpu-power-switch.err; then
+        info "nvidia driver unloaded"
+    else
+        err "rmmod nvidia failed: $(cat /tmp/gpu-power-switch.err)"
+    fi
+    NVIDIA_OK=0
+    NVIDIA_PCI=""
+    rm -f /tmp/gpu-power-switch.err
+}
+
+# Determine desired GPU / profile / CPU state
 DESIRED_GPU="auto"
 DESIRED_PROFILE="balanced"
 if [ "$AC_ONLINE" = 1 ]; then
     DESIRED_GPU="on"
     DESIRED_PROFILE="performance"
+    load_nvidia_driver
+else
+    # On battery: set GPU to auto first, then unload the driver
+    unload_nvidia_driver
 fi
+
+# Idempotency: skip the write if the GPU is already in the desired state.
 if [ "$NVIDIA_OK" = 1 ] && [ -r "$NVIDIA_PCI/power/control" ]; then
     cur="$(cat "$NVIDIA_PCI/power/control" 2>/dev/null || echo)"
     if [ "$cur" = "$DESIRED_GPU" ]; then
         info "GPU already in $cur, skipping"
-        DESIRED_GPU=""   # marker: no change needed
+        DESIRED_GPU=""
     fi
 fi
 
