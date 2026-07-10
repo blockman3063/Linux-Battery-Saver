@@ -503,7 +503,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.connect("close-request", self._on_close_request)
         # Persistent settings: remember the last manual GPU choice.
         self._settings = Gio.Settings.new("org.linuxbatterysaver.Gui")
-        self._system_w_avg = None  # exponential moving average for System row
 
         # Header
         header = Adw.HeaderBar()
@@ -646,8 +645,7 @@ class MainWindow(Adw.ApplicationWindow):
         # the kernel's "status" sysfs.
         if r.ac_online:
             # Smoothed estimate = CPU + GPU + 8W overhead.
-            # Exponential moving average (alpha=0.3) suppresses
-            # measurement noise while tracking real changes.
+            # Only updates on helper ticks (every 4th poll).
             est = 8.0
             have = False
             if r.cpu_w is not None:
@@ -657,12 +655,9 @@ class MainWindow(Adw.ApplicationWindow):
                 est += r.gpu_w
                 have = True
             if have:
-                if self._system_w_avg is None:
-                    self._system_w_avg = est
-                else:
-                    self._system_w_avg = 0.7 * self._system_w_avg + 0.3 * est
                 self.power_row.set_title("System")
-                self.power_row.set_subtitle(f"~{self._system_w_avg:.1f} W · on AC")
+                self.power_row.set_subtitle(f"~{est:.1f} W · on AC")
+            # else: keep last subtitle (non-helper tick)
         elif r.battery_w is not None and r.battery_w > 0:
             parts = [f"Discharge {r.battery_w:.1f} W", "on battery"]
             self.power_row.set_title("System")
