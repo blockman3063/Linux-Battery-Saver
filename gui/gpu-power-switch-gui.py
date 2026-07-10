@@ -661,21 +661,33 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.charge_row.set_subtitle("—")
 
+        # Runtime row: keep last subtitle if we cannot compute a fresh
+        # value this tick. The helper only runs every 4th tick; on
+        # non-helper ticks the previous reading is still the best
+        # information we have.
+        cur_runtime = self.runtime_row.get_subtitle() or ""
+        new_runtime = None
         if r.bat_time and r.bat_time.strip():
-            # UPower already computed a human-readable time-to-empty / time-to-full
-            self.runtime_row.set_subtitle(r.bat_time.strip())
+            new_runtime = r.bat_time.strip()
         elif r.charge_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
             minutes = r.charge_wh / r.battery_w * 60.0
-            self.runtime_row.set_subtitle(self._fmt_duration(minutes))
+            new_runtime = self._fmt_duration(minutes)
         elif r.charge_pct and r.charge_full_wh and r.battery_w and r.battery_w > 0 and not r.ac_online:
-            # pct + full_wh gives now_wh; recompute
             now_wh = r.charge_pct / 100.0 * r.charge_full_wh
             minutes = now_wh / r.battery_w * 60.0
-            self.runtime_row.set_subtitle(self._fmt_duration(minutes))
+            new_runtime = self._fmt_duration(minutes)
         elif r.ac_online:
-            self.runtime_row.set_subtitle("∞ (charging / on AC)")
-        else:
-            self.runtime_row.set_subtitle("—")
+            # AC mode: upower may report 'time to full' as bat_time;
+            # that is what the user wants to see (charging progress).
+            # On non-helper ticks, keep the last reading.
+            if cur_runtime and cur_runtime != "∞ (charging / on AC)":
+                # The previous reading was informative (time-to-full) —
+                # keep showing it.
+                pass
+            else:
+                new_runtime = "∞ (charging / on AC)"
+        if new_runtime is not None:
+            self.runtime_row.set_subtitle(new_runtime)
 
         self.profile_row.set_subtitle(r.profile)
 
