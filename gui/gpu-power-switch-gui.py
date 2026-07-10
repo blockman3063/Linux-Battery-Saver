@@ -645,8 +645,7 @@ class MainWindow(Adw.ApplicationWindow):
         # the kernel's "status" sysfs.
         if r.ac_online:
             # On AC: estimate system total from CPU + GPU + platform.
-            # If CPU/GPU aren't available this tick (helper didn't run),
-            # show "on AC" without a bogus wattage.
+            # Non-helper ticks won't have CPU/GPU data — keep last value.
             est = 8.0
             have_cpu = r.cpu_w is not None
             have_gpu = r.gpu_w is not None
@@ -655,8 +654,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.power_row.set_title("System")
             if have_cpu or have_gpu:
                 self.power_row.set_subtitle(f"~{est:.1f} W · on AC")
-            else:
-                self.power_row.set_subtitle("on AC")
+            # else: keep previous subtitle (cpu/gpu will be back next helper tick)
         elif r.battery_w is not None and r.battery_w > 0:
             parts = [f"Discharge {r.battery_w:.1f} W", "on battery"]
             self.power_row.set_title("System")
