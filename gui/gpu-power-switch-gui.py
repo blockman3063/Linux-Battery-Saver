@@ -487,7 +487,10 @@ class Poller(GObject.Object):
                 helper_ran=use_helper,
                 timestamp=time.time(),
             )
-            GLib.idle_add(lambda r=reading: self.emit("reading", r) or False)
+            try:
+                GLib.idle_add(lambda r=reading: self.emit("reading", r) or False)
+            except Exception:
+                pass
             self._stop.wait(POLL_INTERVAL_MS / 1000.0)
 
 
