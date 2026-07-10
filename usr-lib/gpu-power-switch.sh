@@ -362,8 +362,22 @@ NVIDIA_KO="$NVIDIA_BASE/nvidia.ko"
 
 load_nvidia_driver() {
     if lsmod | grep -q '^nvidia '; then
-        info "nvidia driver already loaded"
-        return 0
+        # Module loaded — still check that the PCI device exists.
+        # A previous PCI remove may have left the module orphaned.
+        if [ ! -d /sys/bus/pci/devices/0000:01:00.0 ]; then
+            info "nvidia module loaded but PCI device absent, rescanning"
+            echo 1 > /sys/bus/pci/devices/0000:00:01.0/rescan 2>/dev/null || true
+            sleep 2
+        fi
+        # After rescan (or if device already present) the driver is usable.
+        if [ -d /sys/bus/pci/devices/0000:01:00.0 ]; then
+            info "nvidia driver already loaded"
+            NVIDIA_PCI="/sys/bus/pci/devices/0000:01:00.0"
+            NVIDIA_OK=1
+            return 0
+        fi
+        warn "nvidia module loaded but no PCI device — trying fresh load"
+        rmmod nvidia 2>/dev/null || true
     fi
     # If the PCI device was previously removed (D3cold), rescan
     # the parent bridge to bring it back first.
