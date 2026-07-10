@@ -444,14 +444,23 @@ class Poller(GObject.Object):
                     continue
             profile = "unknown"
             try:
+                # powerprofilesctl 0.30 has a known BrokenPipeError
+                # crash on some systems (GNOME Apport then reports the
+                # binary as a crash). Wrap with a short timeout and
+                # swallow exit codes so the GUI is unaffected.
                 r = subprocess.run(
                     ["powerprofilesctl", "get"],
                     capture_output=True, text=True, timeout=2, check=False,
                 )
                 if r.returncode == 0 and r.stdout.strip():
                     profile = r.stdout.strip()
-            except (subprocess.SubprocessError, OSError):
-                pass
+            except (subprocess.SubprocessError, OSError, BrokenPipeError):
+                # Fall back to the last known good profile; if we have
+                # not observed one yet, infer from current settings.
+                profile = profile if profile and profile != "unknown" else self._infer_profile()
+            else:
+                if profile == "unknown" and r.returncode != 0:
+                    profile = self._infer_profile()
 
             reading = PowerReading(
                 battery_w=bat_w,
@@ -747,6 +756,21 @@ class MainWindow(Adw.ApplicationWindow):
         if h == 0:
             return f"{m} min"
         return f"{h} h {m:02d} min"
+
+    def _infer_profile(self) -> str:
+        """Best-effort profile inference when powerprofilesctl is unavailable
+        (crashed or not installed). Map intel_pstate settings to a profile
+        name so the UI does not show 'unknown' forever.
+        """
+        try:
+            p = "/sys/devices/system/cpu/intel_pstate"
+            no_turbo = open(f"{p}/no_turbo").read().strip()
+            max_pct = open(f"{p}/max_perf_pct").read().strip()
+        except OSError:
+            return "unknown"
+        if no_turbo == "1" or max_pct != "100":
+            return "balanced"
+        return "performance"
 
     def _do_action(self, action: str) -> None:
         if action == "gpu_on":
