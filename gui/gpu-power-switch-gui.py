@@ -497,6 +497,8 @@ class MainWindow(Adw.ApplicationWindow):
         super().__init__(application=app, default_width=520, default_height=640)
         self.set_title("Linux Battery Saver")
         self.connect("close-request", self._on_close_request)
+        # Persistent settings: remember the last manual GPU choice.
+        self._settings = Gio.Settings.new("org.linuxbatterysaver.Gui")
 
         # Header
         header = Adw.HeaderBar()
@@ -715,16 +717,15 @@ class MainWindow(Adw.ApplicationWindow):
             self.gpu_mode_row.set_subtitle(
                 "Following AC state automatically"
             )
-        # Buttons are always sensitive when the dGPU is present.
-        # Pressing either one takes the user out of auto-mode (sets the
-        # lock) and applies the requested state. To return to auto,
-        # flip the switch above back on.
-        self.btn_gpu_on.set_sensitive(
-            r.gpu_present and r.gpu_control != "on"
-        )
-        self.btn_gpu_off.set_sensitive(
-            r.gpu_present and r.gpu_control != "auto"
-        )
+        # Buttons: highlight the *opposite* of the last manual choice,
+        # so a user who just picked "Suspend" sees a clear Wake button
+        # inviting them to come back. The actual hardware state
+        # (r.gpu_control) can be different if AC events have run since.
+        last = self._settings.get_string("last-manual-gpu-power")
+        if last not in ("on", "auto"):
+            last = "on"  # default highlight
+        self.btn_gpu_on.set_sensitive(r.gpu_present and last != "on")
+        self.btn_gpu_off.set_sensitive(r.gpu_present and last != "auto")
 
         # Global switch (header)
         self.global_switch.set_state(r.enabled)
@@ -768,9 +769,13 @@ class MainWindow(Adw.ApplicationWindow):
     def _do_action(self, action: str) -> None:
         if action == "gpu_on":
             ok, msg = gpu_set_power("on")
+            if ok:
+                self._settings.set_string("last-manual-gpu-power", "on")
             self._toast("GPU → on" if ok else f"Failed: {msg}", ok)
         elif action == "gpu_off":
             ok, msg = gpu_set_power("auto")
+            if ok:
+                self._settings.set_string("last-manual-gpu-power", "auto")
             self._toast("GPU → auto" if ok else f"Failed: {msg}", ok)
 
     def _on_mode_toggle(self, _src, state: bool) -> bool:

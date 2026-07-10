@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.linuxbatterysaver.Gui" path="/org/linuxbatterysaver/Gui/">
+    <key name="last-manual-gpu-power" type="s">
+      <default>"on"</default>
+      <summary>Last manual GPU power control</summary>
+    </key>
+  </schema>
+</schemalist>

@@ -47,6 +47,10 @@ rmdir "$INSTALL_LIB" 2>/dev/null || true
 log "Removing polkit policy + .desktop entry"
 rm -f "$INSTALL_POLKIT/org.linuxbatterysaver.policy"
 rm -f "$INSTALL_APPS/linux-battery-saver.desktop"
+rm -f "$PREFIX/share/glib-2.0/schemas/org.linuxbatterysaver.Gui.gschema.xml"
+if command -v glib-compile-schemas >/dev/null 2>&1; then
+    glib-compile-schemas "$PREFIX/share/glib-2.0/schemas/" 2>/dev/null || true
+fi
 # User-level autostart (created by install.sh or by you manually)
 rm -f "$HOME/.config/autostart/linux-battery-saver.desktop"
 

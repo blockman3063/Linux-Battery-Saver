@@ -83,6 +83,12 @@ log "Installing polkit policy + .desktop entry"
 install -d -m 755 "$INSTALL_POLKIT" "$INSTALL_APPS"
 install -m 644 polkit/org.linuxbatterysaver.policy "$INSTALL_POLKIT/org.linuxbatterysaver.policy"
 install -m 644 desktop/linux-battery-saver.desktop "$INSTALL_APPS/linux-battery-saver.desktop"
+install -d -m 755 "$PREFIX/share/glib-2.0/schemas"
+install -m 644 desktop/org.linuxbatterysaver.Gui.gschema.xml \
+    "$PREFIX/share/glib-2.0/schemas/org.linuxbatterysaver.Gui.gschema.xml"
+if command -v glib-compile-schemas >/dev/null 2>&1; then
+    glib-compile-schemas "$PREFIX/share/glib-2.0/schemas/" 2>/dev/null || true
+fi
 
 log "Installing NVIDIA runtime-PM modprobe config"
 install -d -m 755 "$INSTALL_MODPROBE"
