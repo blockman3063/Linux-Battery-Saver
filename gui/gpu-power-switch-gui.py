@@ -797,12 +797,42 @@ class MainWindow(Adw.ApplicationWindow):
             ok, msg = gpu_set_power("on")
             if ok:
                 self._settings.set_string("last-manual-gpu-power", "on")
-            self._toast("GPU → on" if ok else f"Failed: {msg}", ok)
+                self._toast(
+                    "GPU forced on — manual lock set; AC events will be ignored "
+                    "until you re-enable Auto-switch.", True,
+                )
+            else:
+                self._toast(f"Failed: {msg}", False)
         elif action == "gpu_off":
             ok, msg = gpu_set_power("auto")
             if ok:
                 self._settings.set_string("last-manual-gpu-power", "auto")
-            self._toast("GPU → auto" if ok else f"Failed: {msg}", ok)
+                # Reflect the new manual state in the GPU mode switch
+                # so the user can see they are now in manual mode.
+                self.gpu_mode_switch.handler_block_by_func(self._on_mode_toggle)
+                self.gpu_mode_switch.set_active(False)
+                self.gpu_mode_switch.handler_unblock_by_func(self._on_mode_toggle)
+                # Surface the dGPU runtime_status if it is still active
+                # — usually because the desktop session (gnome-shell on
+                # Wayland) holds an open fd to /dev/nvidia0.
+                rs = ""
+                try:
+                    rs = Path("/sys/bus/pci/devices/0000:01:00.0/power/runtime_status").read_text().strip()
+                except OSError:
+                    pass
+                if rs == "active":
+                    self._toast(
+                        "Manual mode locked. dGPU marked auto, but it may "
+                        "stay active because the desktop session is still "
+                        "using it.", True,
+                    )
+                else:
+                    self._toast(
+                        "Manual mode locked. dGPU is off until you re-enable "
+                        "Auto-switch.", True,
+                    )
+            else:
+                self._toast(f"Failed: {msg}", False)
 
     def _on_mode_toggle(self, _src, state: bool) -> bool:
         # state True = user wants auto (no lock, follow AC).
