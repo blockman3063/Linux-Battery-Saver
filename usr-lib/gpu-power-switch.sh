@@ -374,16 +374,27 @@ unload_nvidia_driver() {
         return 0
     fi
     info "unloading nvidia driver"
-    # Kill userspace processes holding nvidia devices open
+    # Force-kill every process holding /dev/nvidia* open.
+    # The GUI's poller spawns nvidia-smi every 1.5 s, which opens
+    # the device — we need two rounds (TERM then KILL) to be sure.
     fuser -k /dev/nvidia* 2>/dev/null || true
+    sleep 1
+    fuser -k -KILL /dev/nvidia* 2>/dev/null || true
     sleep 0.5
+    # Before rmmod nvidia, also check if nvidia-uvm (CUDA) is
+    # still around and unload it.
     modprobe -r nvidia-uvm 2>/dev/null || true
-    modprobe -r nvidia-drm 2>/dev/null || true
-    modprobe -r nvidia-modeset 2>/dev/null || true
     if rmmod nvidia 2>/tmp/gpu-power-switch.err; then
         info "nvidia driver unloaded"
     else
-        err "rmmod nvidia failed: $(cat /tmp/gpu-power-switch.err)"
+        # One more try after another round of kills
+        fuser -k -KILL /dev/nvidia* 2>/dev/null || true
+        sleep 1
+        if rmmod nvidia 2>/tmp/gpu-power-switch.err; then
+            info "nvidia driver unloaded"
+        else
+            err "rmmod nvidia failed: $(cat /tmp/gpu-power-switch.err)"
+        fi
     fi
     NVIDIA_OK=0
     NVIDIA_PCI=""
