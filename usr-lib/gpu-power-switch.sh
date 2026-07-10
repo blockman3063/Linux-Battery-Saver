@@ -418,15 +418,15 @@ unload_nvidia_driver() {
         return 0
     fi
     info "unloading nvidia driver"
-    fuser -k /dev/nvidia* 2>/dev/null || true
+    killall -q nvidia-smi 2>/dev/null || true
     sleep 1
-    fuser -k -KILL /dev/nvidia* 2>/dev/null || true
+    killall -q -9 nvidia-smi 2>/dev/null || true
     sleep 0.5
     timeout 5 modprobe -r nvidia-uvm 2>/dev/null || warn "nvidia-uvm unload timed out, skipping"
     if timeout 5 rmmod nvidia 2>/tmp/gpu-power-switch.err; then
         info "nvidia driver unloaded"
     else
-        fuser -k -KILL /dev/nvidia* 2>/dev/null || true
+        killall -q -9 nvidia-smi 2>/dev/null || true
         sleep 1
         timeout 5 rmmod nvidia 2>/tmp/gpu-power-switch.err ||             warn "rmmod nvidia timed out, GPU may stay powered"
     fi
