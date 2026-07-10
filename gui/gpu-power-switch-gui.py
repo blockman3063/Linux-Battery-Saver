@@ -520,6 +520,17 @@ class MainWindow(Adw.ApplicationWindow):
         self.global_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         self.global_switch.connect("state-set", self._on_global_toggle)
         header.pack_start(self.global_switch)
+        # Read initial enabled state directly so the switch shows the
+        # correct position before the first poller tick (1.5 s delay).
+        try:
+            val = Path("/etc/gpu-power-switch/enabled").read_text().strip()
+            self.global_switch.handler_block_by_func(self._on_global_toggle)
+            self.global_switch.set_active(
+                val not in ("0", "false", "no", "off", "")
+            )
+            self.global_switch.handler_unblock_by_func(self._on_global_toggle)
+        except OSError:
+            self.global_switch.set_active(True)
 
         # Toast overlay
         toast_overlay = Adw.ToastOverlay()
@@ -788,16 +799,16 @@ class MainWindow(Adw.ApplicationWindow):
             import shutil as _s2
             ms = "/usr/lib/gpu-power-switch/gpu-power-switch-mode"
             if _s2.which(ms):
-                r = _sp.run([ms, "status"], capture_output=True, text=True, timeout=3)
-                if r.returncode == 0:
+                _r = _sp.run([ms, "status"], capture_output=True, text=True, timeout=3)
+                if _r.returncode == 0:
                     pm = ""
-                    for ln in r.stdout.splitlines():
+                    for ln in _r.stdout.splitlines():
                         if ln.startswith("prime_mode="):
                             pm = ln.split("=", 1)[1].strip()
                             break
                     if pm:
                         nd = ""
-                        for ln in r.stdout.splitlines():
+                        for ln in _r.stdout.splitlines():
                             if ln.startswith("nvidia_loaded="):
                                 nd = ln.split("=", 1)[1].strip()
                                 break
