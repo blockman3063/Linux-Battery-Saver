@@ -721,9 +721,11 @@ class MainWindow(Adw.ApplicationWindow):
         # so a user who just picked "Suspend" sees a clear Wake button
         # inviting them to come back. The actual hardware state
         # (r.gpu_control) can be different if AC events have run since.
+        # Default to 'auto' so a fresh install shows Wake (the typical
+        # first manual action on a battery-powered laptop) lit.
         last = self._settings.get_string("last-manual-gpu-power")
         if last not in ("on", "auto"):
-            last = "on"  # default highlight
+            last = "auto"
         self.btn_gpu_on.set_sensitive(r.gpu_present and last != "on")
         self.btn_gpu_off.set_sensitive(r.gpu_present and last != "auto")
 

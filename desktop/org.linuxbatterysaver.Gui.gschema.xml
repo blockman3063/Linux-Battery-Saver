@@ -2,7 +2,7 @@
 <schemalist>
   <schema id="org.linuxbatterysaver.Gui" path="/org/linuxbatterysaver/Gui/">
     <key name="last-manual-gpu-power" type="s">
-      <default>"on"</default>
+      <default>"auto"</default>
       <summary>Last manual GPU power control</summary>
     </key>
   </schema>
