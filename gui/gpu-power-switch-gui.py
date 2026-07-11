@@ -695,15 +695,21 @@ class MainWindow(Adw.ApplicationWindow):
             f"{r.cpu_w:.1f} W" if r.cpu_w is not None
             else (self.cpu_row.get_subtitle() or "n/a (no RAPL)")
         )
+        # GPU row — prefer nvidia-smi, otherwise estimate from battery draw.
+        # When discharging (battery_w > 0, not charging) the GPU power is
+        # system_total − CPU_RAPL − ~8 W platform overhead.  Keep the last
+        # subtitle when neither source is available to avoid flicker.
         if r.gpu_w is not None:
-            self.gpu_power_row.set_subtitle(f"{r.gpu_w:.1f} W")
-        elif r.battery_w and r.battery_w > 0 and r.cpu_w:
-            # Driver not loaded — derive GPU-side power from the rest:
-            # total battery draw minus RAPL minus fixed overhead.
+            gpu_text = f"{r.gpu_w:.1f} W"
+        elif r.battery_w is not None and r.battery_w > 0 and not r.ac_online and r.cpu_w is not None:
             other = max(0, r.battery_w - r.cpu_w - 8)
-            self.gpu_power_row.set_subtitle(f"~{other:.1f} W (no driver)")
+            tail = " (no driver)" if not r.gpu_present else ""
+            gpu_text = f"~{other:.1f} W{tail}"
         else:
-            self.gpu_power_row.set_subtitle("n/a (no nvidia-smi)")
+            gpu_text = None
+        if gpu_text is not None:
+            self.gpu_power_row.set_subtitle(gpu_text)
+        # else: keep last subtitle
 
         # Battery: merge charge %, rate, and health into one row
         parts = []
