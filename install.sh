@@ -93,6 +93,10 @@ fi
 log "Installing NVIDIA runtime-PM modprobe config"
 install -d -m 755 "$INSTALL_MODPROBE"
 install -m 644 modprobe.d/nvidia-runtimepm.conf "$INSTALL_MODPROBE/nvidia-runtimepm.conf"
+log "Installing nvidia-off blacklist (prevents modprobe loading nvidia at boot)"
+install -m 644 modprobe.d/nvidia-off.conf "$INSTALL_MODPROBE/nvidia-off.conf"
+log "Masking nvidia-persistenced (would load nvidia at boot via insmod)"
+systemctl mask --now nvidia-persistenced 2>/dev/null || true
 
 log "Enabling + starting systemd service"
 systemctl daemon-reload

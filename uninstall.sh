@@ -43,6 +43,9 @@ rm -f "$INSTALL_LIB"/gpu-power-switch-manual
 rm -f "$INSTALL_BIN"/gpu-power-switch-gui
 rm -f "$INSTALL_LIB"/gpu-power-switch-mode
 rm -rf "$INSTALL_LIB/gui"
+log "Removing modprobe blacklists + unmasking persistenced"
+rm -f "$INSTALL_MODPROBE"/nvidia-off.conf
+systemctl unmask nvidia-persistenced 2>/dev/null || true
 rmdir "$INSTALL_LIB" 2>/dev/null || true
 
 log "Removing polkit policy + .desktop entry"
