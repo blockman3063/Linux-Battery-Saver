@@ -1,10 +1,14 @@
 #!/bin/bash
-# gpu-power-switch-gui — crash-proof launcher (0.2 s restart)
+# gpu-power-switch-gui — crash-proof launcher
+# Force Mesa for GL rendering so GTK never opens /dev/nvidia* even when
+# the nvidia module is loaded (avoids fuser -k killing the GUI on unplug).
 MAX_RESTARTS=10
 RESTART_DELAY=0.2
 COUNT=0
 LOG="/tmp/gpa-launcher.log"
 PYTHON="/usr/bin/python3"
+export __GLX_VENDOR_LIBRARY_NAME=mesa
+export GBM_BACKEND=nouveau
 while [ $COUNT -lt $MAX_RESTARTS ]; do
     COUNT=$((COUNT + 1))
     $PYTHON /usr/lib/gpu-power-switch/gui/gpu-power-switch-gui.py "$@" >> "$LOG" 2>&1

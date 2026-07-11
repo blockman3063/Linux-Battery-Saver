@@ -332,6 +332,19 @@ if [ "$SUBCMD" = "set-profile" ]; then
     exit 0
 fi
 
+# ---------- subcommand: boot (oneshot at boot) ----------
+# At boot we ONLY set the CPU/power profile. The GPU driver
+# is handled by udev on AC transitions, not at boot, so that
+# the GUI (which opens /dev/nvidia*) does not prevent rmmod.
+if [ "$SUBCMD" = "boot" ]; then
+    read_ac_state && AC_ONLINE=1 || AC_ONLINE=0
+    DESIRED_PROFILE="balanced"
+    [ "$AC_ONLINE" = 1 ] && DESIRED_PROFILE="performance"
+    set_profile "$DESIRED_PROFILE"
+    set_cpu_perf "$DESIRED_PROFILE"
+    exit 0
+fi
+
 # ---------- default subcommand: ac ----------
 # Honour the global enabled flag. If disabled, do nothing for AC events.
 if ! is_enabled; then
@@ -418,15 +431,15 @@ unload_nvidia_driver() {
         return 0
     fi
     info "unloading nvidia driver"
-    killall -q nvidia-smi 2>/dev/null || true
+    fuser -k /dev/nvidia* 2>/dev/null || true
     sleep 1
-    killall -q -9 nvidia-smi 2>/dev/null || true
+    fuser -k -KILL /dev/nvidia* 2>/dev/null || true
     sleep 0.5
     timeout 5 modprobe -r nvidia-uvm 2>/dev/null || warn "nvidia-uvm unload timed out, skipping"
     if timeout 5 rmmod nvidia 2>/tmp/gpu-power-switch.err; then
         info "nvidia driver unloaded"
     else
-        killall -q -9 nvidia-smi 2>/dev/null || true
+        fuser -k -KILL /dev/nvidia* 2>/dev/null || true
         sleep 1
         timeout 5 rmmod nvidia 2>/tmp/gpu-power-switch.err ||             warn "rmmod nvidia timed out, GPU may stay powered"
     fi
