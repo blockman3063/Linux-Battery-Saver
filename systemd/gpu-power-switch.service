@@ -1,13 +1,9 @@
 [Unit]
 Description=GPU Power Auto Switch — apply current AC state at boot
 Documentation=man:power-profiles-daemon(1)
-# We do not use After=power-profiles-daemon.service: that creates an
-# ordering cycle on systems where ppd is not installed (which is the
-# common case when tlp is used instead). The script's own profile
-# detection falls back to TLP, so it does not need to wait for ppd.
-# We only wait for the filesystem to be up so /var/lib exists.
-After=local-fs.target
-Wants=local-fs.target
+# Wait for power-profiles-daemon so powerprofilesctl is callable on first run.
+After=power-profiles-daemon.service
+Wants=power-profiles-daemon.service
 
 [Service]
 Type=oneshot
